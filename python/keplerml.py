@@ -16,14 +16,41 @@ def fl_files(fl):
 
 def fl_files_w_path(fl,fitsDir):
     """
-    Returns an array with the files with the full path in the given filelist, with the given path
+    Returns an array with the files to be processed
+    in the given filelist with the given path.
     """
-    fcreate = open(fl.replace('.txt',"")+"_completed.txt",'a')
-    fcreate.close()
-    with open(fl.replace('.txt',"")+"_completed.txt",'r+') as f:
-        completed = [fitsDir+'/'+line.strip() for line in f]
-    
-    return [fitsDir+'/'+line.strip() for line in open(fl) if line not in completed]
+    files = fl_files(fl)
+    fl_c = fl.replace('.txt',"")+"_completed.txt"
+    if os.path.isfile(fl_c):
+        # Checks for a completed filelist (fl_complete.txt) so as not to reprocess any files.
+        completed = fl_files(fl_c)  
+        
+        dff = pd.DataFrame(index = files)
+        dfc = pd.DataFrame(index = completed)
+        df = dff.append(dfc)
+        df = df[~df.index.duplicated(keep=False)]
+        files = np.chararray(len(df.index),itemsize=len(df.index[0]))
+        files[:] = df.index
+        
+        """
+        While it seems roundabout to convert to empty pandas dataframes, it's about 20% faster
+        than using numpy arrays as follows.
+        
+        unique,counts = np.unique(np.concatenate([files,completed]),return_counts=True)
+        files = unique[counts==1]
+        """
+
+        
+    else:
+        files_copy = files
+        files = np.chararray(len(files_copy),itemsize=len(files_copy[0]))
+        files[:] = files_copy
+        
+        # Creates a completed filelist
+        fcreate = open(fl_c,'a')
+        fcreate.close()
+        
+    return fitsDir+files
 
 def read_kepler_curve(file):
     """
@@ -45,28 +72,34 @@ def read_kepler_curve(file):
 
     return t, nf, err
 
-def clean_up(fl,fitsDir,in_file='tmp_data.csv'):
+def clean_up(fl,in_file='tmp_data.csv'):
     """
-    Primarily for a failed run.
-    Creates a completed filelist 
-    and removes the original filelist 
-    if all files have been processed.
+    Removes files already processed from files array and
+    removes the original filelist if all files have been processed.
     """
     
     files = fl_files(fl)
     df = pd.read_csv(in_file,index_col=0)
+    """
+    Dropping files that have already been processed from the files 
+    """
+    # Create a copy of df to manipulate
+    dfc = df
+    # create an empty dataframe with the file names as indices
+    dff = pd.DataFrame(index = files)
+    dfc = dfc.append(dff)
+    files = np.array(dfc[~dfc.index.duplicated(keep=False)].index)
     
-    with open(fl.replace('.txt',"")+'_completed.txt','a') as f:
-        for lc in df.index:
-            f.write('%s\n'%lc)
-            files.remove(lc)
+    for lc in df.index:
+        with open(fl.replace('.txt',"")+"_completed.txt",'a') as completed:
+            completed.write(lc)
+        files.remove(lc)
                 
     if files==[]:
         print("All files from original filelist processed, deleting original filelist.")
         os.remove(fl)
 
-    os.remove('tmp_data.csv')
-    return
+    return files
 
 def save_output(out_file,in_file='tmp_data.csv'):
     """
@@ -76,7 +109,9 @@ def save_output(out_file,in_file='tmp_data.csv'):
     
     df = pd.read_csv(in_file,index_col=0)
     df=df.sort_index()
-    df.to_csv(out_file)
+    with open(out_file,'a') as of:
+        df.to_csv(of)
+    os.remove(in_file)
     
     return
 
@@ -365,7 +400,8 @@ def featureCalculation(nfile,t,nf,err):
         else: 
             flatrat = flatmean / tflatmean #F60
 
-        ndata = np.array([longtermtrend, meanmedrat, skews, varss, coeffvar, stds, \
+        ndata = np.array([t,nf,err,
+                 longtermtrend, meanmedrat, skews, varss, coeffvar, stds, \
                  numoutliers, numnegoutliers, numposoutliers, numout1s, kurt, mad, \
                  maxslope, minslope, meanpslope, meannslope, g_asymm, rough_g_asymm, \
                  diff_asymm, skewslope, varabsslope, varslope, meanabsslope, absmeansecder, \
@@ -376,7 +412,8 @@ def featureCalculation(nfile,t,nf,err):
                  mid65, mid80, percentamp, magratio, sautocorrcoef, autocorrcoef, \
                  flatmean, tflatmean, roundmean, troundmean, roundrat, flatrat])
         
-        fts = ["longtermtrend", "meanmedrat", "skews", "varss", "coeffvar", "stds", \
+        fts = ["t","nf","err",\
+               "longtermtrend", "meanmedrat", "skews", "varss", "coeffvar", "stds", \
                "numoutliers", "numnegoutliers", "numposoutliers", "numout1s", "kurt", "mad", \
                "maxslope", "minslope", "meanpslope", "meannslope", "g_asymm", "rough_g_asymm", \
                "diff_asymm", "skewslope", "varabsslope", "varslope", "meanabsslope", "absmeansecder", \
@@ -387,7 +424,7 @@ def featureCalculation(nfile,t,nf,err):
                "mid65", "mid80", "percentamp", "magratio", "sautocorrcoef", "autocorrcoef", \
                "flatmean", "tflatmean", "roundmean", "troundmean", "roundrat", "flatrat"]
 
-        df = pd.DataFrame([ndata],index=[nfile.replace(fitsDir+'/',"")],columns=fts)
+        df = pd.DataFrame([ndata],index=[nfile.replace(fitsDir,"")],columns=fts)
 
         with open('tmp_data.csv','a') as f:
             df.to_csv(f,header=False)
@@ -398,14 +435,21 @@ def featureCalculation(nfile,t,nf,err):
         
     except TypeError:
         kml_log = 'kml_log'
-        os.system('echo %s ... TYPE ERROR >> %s'%(nfile.replace(fitsDir+'/',""),kml_log))
+        os.system('echo %s ... TYPE ERROR >> %s'%(nfile.replace(fitsDir,""),kml_log))
         return 
 
 def features_from_fits(nfile):
-    t,nf,err = read_kepler_curve(nfile)
-    # t = time
-    # err = error
-    # nf = normalized flux.
+    try:
+        t,nf,err = read_kepler_curve(nfile)
+        # t = time
+        # err = error
+        # nf = normalized flux.
+        
+    except TypeError as err:
+        # Files can be truncated by the zipping process.
+        print("%s. Try downloading %s again."%(err,nfile))
+        return
+    
     features = featureCalculation(nfile,t,nf,err)
     if __name__=="__main__":
         return
@@ -423,7 +467,9 @@ def features_from_filelist(fl,fitDir,of,numCpus = cpu_count(), verbose=False):
     """
     global fitsDir
     fitsDir = fitDir
-    df = pd.DataFrame({
+    
+    if not os.path.isfile('tmp_data.csv'):
+        df = pd.DataFrame({
         "longtermtrend":[], "meanmedrat":[], "skews":[], "varss":[], "coeffvar":[], "stds":[], \
         "numoutliers":[], "numnegoutliers":[], "numposoutliers":[], "numout1s":[], "kurt":[], "mad":[], \
         "maxslope":[], "minslope":[], "meanpslope":[], "meannslope":[], "g_asymm":[], "rough_g_asymm":[], \
@@ -434,23 +480,31 @@ def features_from_filelist(fl,fitDir,of,numCpus = cpu_count(), verbose=False):
         "amp":[], "normamp":[], "mbp":[], "mid20":[], "mid35":[], "mid50":[], \
         "mid65":[], "mid80":[], "percentamp":[], "magratio":[], "sautocorrcoef":[], "autocorrcoef":[], \
         "flatmean":[], "tflatmean":[], "roundmean":[], "troundmean":[], "roundrat":[], "flatrat":[]})
-
-    with open('tmp_data.csv','w') as f:df.to_csv(f)
+        
+        with open('tmp_data.csv','w') as f:df.to_csv(f)
+    
     # files with path.
+    print("Reading %s..."%fl)
     files = fl_files_w_path(fl,fitsDir)
+    useCpus = min([len(files),numCpus-1])
     if verbose:
-        print("Using %s cpus to calculate features..."%numCpus)
+        print("Processing %s files..."%len(files))
+        print("Using %s cpus to calculate features..."%useCpus)
+                                         
     p = Pool(numCpus)
     # Method saves to tmp_data.csv file to save on system memory
     p.map(features_from_fits,files)
     p.close()
     p.join()
+    
     if verbose:
         print("Features have been calculated")
-        print("Saving output to %s"%of)
+        print("Cleaning up...")
+    clean_up(fl)
+    
+    if verbose:print("Saving output to %s"%of)
     save_output(of)
-    if verbose:print("Output saved, cleaning up...")
-    clean_up(fl,fitsDir)
+
     if verbose:print("Done.")
     
     if __name__=="__main__":
@@ -470,7 +524,6 @@ if __name__=="__main__":
         fl = sys.argv[1]
     else:
         fl = raw_input("Input path: ")
-    print("Reading %s..."%fl)
 
     if sys.argv[2]:
         fitsDir = sys.argv[2]
@@ -484,6 +537,8 @@ if __name__=="__main__":
         if of  == "":
             print("No output path specified, saving to output.csv in local folder.")
             of = 'output.csv'
-    
+    from datetime import datetime
+    start = datetime.now()
     features_from_filelist(fl,fitsDir,of,verbose=True)
+    print(datetime.now()-start)
     

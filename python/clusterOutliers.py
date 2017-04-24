@@ -18,10 +18,12 @@ class clusterOutliers(object):
         self.data = pd.read_csv(feats,index_col=0)
         self.fitsDir = fitsDir
         self.files = self.data.index
+        self.lcs = self.data[['t','nf','err']]
+        #self.lcs = self.poolRKC(self.filesSample)
         # Initializing the data and files samples with the first 100 entries.
         self.dataSample = self.data.iloc[:100]
         self.filesSample = self.files[:100]
-        self.lcs = self.poolRKC(self.filesSample)
+        self.samplelcs = self.dataSample[['t','nf','err']]
         self.importedForPlotting = False
         self.sampleGenerated = False
         self.sampleTSNE = False
@@ -50,9 +52,10 @@ class clusterOutliers(object):
         self.dataSample = self.data.sample(n=numLCs)
         self.filesSample = self.dataSample.index
         print("Importing lightcurves...")
-        self.lcs = self.poolRKC(self.filesSample)
+        self.samplelcs=self.dataSample[['t','nf','err']]
+        #self.samplelcs = self.poolRKC(self.filesSample)
         self.sampleGenerated = True
-        return self.lcs
+        return self.samplelcs
     
     def randSampleWTabby(self, numLCs):
         """
@@ -72,9 +75,10 @@ class clusterOutliers(object):
             self.dataSample.append(self.data[self.data.index.str.contains('8462852')])
         self.filesSample = self.dataSample.index
         print("Importing lightcurves...")
-        self.lcs = self.poolRKC(self.filesSample)
+        self.samplelcs=self.dataSample[['t','nf','err']]
+        #self.samplelcs = self.poolRKC(self.filesSample)
         self.sampleGenerated = True
-        return self.lcs
+        return self.samplelcs
     
     def fullQ(self):
         self.filesSample = self.files
@@ -94,7 +98,7 @@ class clusterOutliers(object):
         perplexity=50
         scaler = preprocessing.StandardScaler().fit(self.dataSample)
         scaledData = scaler.transform(self.dataSample)
-        tsne = TSNE(n_components=2,perplexity=perplexity,init='random',verbose=True)
+        tsne = TSNE(n_components=2,perplexity=perplexity,init='pca',verbose=True)
         tsne_fit=tsne.fit_transform(scaledData)
         self.dataSample['tsne_x'] = tsne_fit.T[0]
         self.dataSample['tsne_y'] = tsne_fit.T[1]
@@ -151,7 +155,6 @@ class clusterOutliers(object):
         """--- import light curve data ---"""
         pathtofits = self.fitsDir
 
-        # The following needs to be generated in the cell above.
         files = self.filesSample
         if method == 'dbscan':
             clusterLabels = self.dataSample.db_cluster
@@ -184,7 +187,7 @@ class clusterOutliers(object):
                 clusterY.append(i[1][1])
                 files_cluster.append(files[i[0]])
 
-        lightcurveData = self.lcs
+        lightcurveData = self.samplelcs
 
         """--- Organizing data and Labels ---"""
 
