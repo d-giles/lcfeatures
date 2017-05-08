@@ -4,14 +4,12 @@ DBSCAN Clustering
 import numpy as np
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import NearestNeighbors
-import fnmatch
-
 
 def eps_est(data):
     # distance array containing all distances
     nbrs = NearestNeighbors(n_neighbors=np.ceil(.2*len(data)), algorithm='ball_tree').fit(data)
     distances, indices = nbrs.kneighbors(data)
-    # Distance to 200th nearest neighbor, using 200th instead of 4th because: ... reasons
+    # Distance to 2*N/100th instead of 4th because: ... reasons
     distArr = distances[:,np.ceil(.02*len(data))]
     distArr.sort()
     pts = range(len(distArr))
@@ -61,7 +59,7 @@ def dbscan_w_outliers(data):
     numout = len(clusterLabels[clusterLabels==-1])
     numclusters = max(clusterLabels+1)
     if data.index.str.contains('8462852').any():
-        tabbyInd = list(data.index).index('8462852')
+        tabbyInd = list(data.index).index(data[data.index.str.contains('8462852')].index[0])
         if clusterLabels[tabbyInd] == -1:
             print("Tabby has been found to be an outlier in DBSCAN.")
         else:

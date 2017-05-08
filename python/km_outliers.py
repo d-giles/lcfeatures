@@ -12,11 +12,12 @@ np.set_printoptions(threshold='nan')
 from multiprocessing import Pool,cpu_count
 import sys
 from datetime import datetime
+#from accelerate import cuda
 from numbapro import cuda
 from sklearn.cluster import KMeans
 
 @cuda.autojit
-def cu_worker(x1, x2, mu, bmk):
+def cu_worker(X, mu, bmk):
     bx =cuda.blockIdx.x
     bw = cuda.blockDim.x
     tx = cuda.threadIdx.x
@@ -25,9 +26,15 @@ def cu_worker(x1, x2, mu, bmk):
     if j>bmk.size:
         return
     num = 0
+    
     for i in range(len(mu)):
         numold = num
-        num = ((x1[j]-mu[i][0])**2+(x2[j]-mu[i][1])**2)**.5
+        sum_squares=0
+        for dim in range(len(X)):
+            sum_squares += (X[dim][j]-mu[i][0])**2
+        
+        num = sum_squares**.5
+        
         if num<numold or i==0:
             bmk[j]=i
 
@@ -35,16 +42,14 @@ def gpumulti(X,mu):
     device = cuda.get_current_device()
     
     n=len(X)
-    X=np.array(X)
-    x1 = np.array(X.T[0])
-    x2 = np.array(X.T[1])
+
+    dimX = np.array(X.T)
     
-    bmk = np.arange(len(x1))
+    bmk = np.arange(n)
     
     mu = np.array(mu)
     
-    dx1 = cuda.to_device(x1)
-    dx2 = cuda.to_device(x2)
+    dX = cuda.to_device(dimX)
     dmu = cuda.to_device(mu)
     dbmk = cuda.to_device(bmk)
     
@@ -52,7 +57,7 @@ def gpumulti(X,mu):
     tpb = device.WARP_SIZE
     bpg = int(np.ceil(float(n)/tpb))
         
-    cu_worker[bpg,tpb](dx1,dx2,dmu,dbmk)
+    cu_worker[bpg,tpb](dX,dmu,dbmk)
     
     bestmukey = dbmk.copy_to_host()
     
@@ -121,7 +126,7 @@ def bounding_box(X):
         
     return (xmin,xmax)
         
-def gap_statistic(k):
+def gap_statistic(k,X):
     
     (xmin,xmax) = bounding_box(X)
         
@@ -155,7 +160,7 @@ def optimalK(X):
     gs = np.zeros(len(ks))
     
     for indk,k in enumerate(ks):
-        gs[indk],sk[indk] = gap_statistic(k)
+        gs[indk],sk[indk] = gap_statistic(k,X)
 
     return min([k for k in range(1,len(ks)-1) if gs[k]-(gs[k+1]-sk[k+1]) >= 0])
 
@@ -233,7 +238,7 @@ def kmeans_w_outliers(data,nclusters=1):
     clusterLabels = np.array(clusterLabels)
     numout = len(clusterLabels[clusterLabels==-1])
     if data.index.str.contains('8462852').any():
-        tabbyInd = list(data.index).index('8462852')
+        tabbyInd = list(data.index).index(data[data.index.str.contains('8462852')].index[0])
         if clusterLabels[tabbyInd] == -1:
             print("Tabby has been found to be an outlier in k-means.")
         else:

@@ -85,7 +85,7 @@ def clean_up(fl,in_file='tmp_data.csv'):
     """
     # Create a copy of df to manipulate
     dfc = df
-    # create an empty dataframe with the file names as indices
+    # create an empty dataframe with all the file names as indices
     dff = pd.DataFrame(index = files)
     dfc = dfc.append(dff)
     files = np.array(dfc[~dfc.index.duplicated(keep=False)].index)
@@ -93,7 +93,6 @@ def clean_up(fl,in_file='tmp_data.csv'):
     for lc in df.index:
         with open(fl.replace('.txt',"")+"_completed.txt",'a') as completed:
             completed.write(lc)
-        files.remove(lc)
                 
     if files==[]:
         print("All files from original filelist processed, deleting original filelist.")
@@ -400,8 +399,7 @@ def featureCalculation(nfile,t,nf,err):
         else: 
             flatrat = flatmean / tflatmean #F60
 
-        ndata = np.array([t,nf,err,
-                 longtermtrend, meanmedrat, skews, varss, coeffvar, stds, \
+        ndata = np.array([longtermtrend, meanmedrat, skews, varss, coeffvar, stds, \
                  numoutliers, numnegoutliers, numposoutliers, numout1s, kurt, mad, \
                  maxslope, minslope, meanpslope, meannslope, g_asymm, rough_g_asymm, \
                  diff_asymm, skewslope, varabsslope, varslope, meanabsslope, absmeansecder, \
@@ -412,8 +410,7 @@ def featureCalculation(nfile,t,nf,err):
                  mid65, mid80, percentamp, magratio, sautocorrcoef, autocorrcoef, \
                  flatmean, tflatmean, roundmean, troundmean, roundrat, flatrat])
         
-        fts = ["t","nf","err",\
-               "longtermtrend", "meanmedrat", "skews", "varss", "coeffvar", "stds", \
+        fts = ["longtermtrend", "meanmedrat", "skews", "varss", "coeffvar", "stds", \
                "numoutliers", "numnegoutliers", "numposoutliers", "numout1s", "kurt", "mad", \
                "maxslope", "minslope", "meanpslope", "meannslope", "g_asymm", "rough_g_asymm", \
                "diff_asymm", "skewslope", "varabsslope", "varslope", "meanabsslope", "absmeansecder", \
