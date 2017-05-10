@@ -149,7 +149,9 @@ class clusterOutliers(object):
         scaledData = scaler.transform(data)
         pca = PCA(n_components=2)
         pca_fit = pca.fit_transform(scaledData)
-        return pca_fit
+        data['pca_x'] = pca_fit.T[0]
+        data['pca_y'] = pca_fit.T[1]
+        return data
     
     def sample_km_out(self):
         assert self.sampleTSNE,"Sample has not been reduced with sample_tsne_fit yet."
@@ -170,13 +172,22 @@ class clusterOutliers(object):
     
     def db_out(self,df):
         clusterLabels = db_outliers.dbscan_w_outliers(df)
-        return clusterLabels
+        df['db_cluster']=clusterLabels
+        return df
     
-    def save(self,of=self.feats):
+    def save(self,of=None):
+        if of == None:
+            of=self.feats
         data.to_csv(of)
-        
-    def plot_sample(self,df=self.dataSample,pathtofits=self.fitsDir,
+    def plot_sample(self,df='self',pathtofits=None,
                     cluster_method="dbscan",reduction_method="tsne"):
+        
+        if type(df) == str:
+            if df == 'self':
+                df = self.dataSample
+        if pathtofits == None:
+            pathtofits = self.fitsDir
+        
         root = Tk.Tk()
         root.wm_title("Scatter")
         """--- import light curve data ---"""
@@ -186,9 +197,6 @@ class clusterOutliers(object):
             clusterLabels = df.db_cluster
         elif cluster_method == 'kmeans':
             clusterLabels = df.km_cluster
-            
-        # data is an array containing each data point
-        data = np.array(df[['tsne_x','tsne_y']])
 
         cNorm  = colors.Normalize(vmin=0, vmax=max(clusterLabels))
         scalarMap = cmx.ScalarMappable(norm=cNorm, cmap='jet')
@@ -197,7 +205,8 @@ class clusterOutliers(object):
         data_cluster = self.dataSample[clusterLabels!=-1]
         files_cluster = data_cluster.index
 
-        if reduction_method='tsne':
+        if reduction_method=='tsne':
+            data = np.array(df[['tsne_x','tsne_y']])
             # tsneX has all the x-coordinates
             redX = df.tsne_x
             # tsneY has all the y-coordinates
@@ -210,7 +219,8 @@ class clusterOutliers(object):
             clusterX = data_cluster.tsne_x
             clusterY = data_cluster.tsne_y
             
-        elif reduction_method='pca':
+        elif reduction_method=='pca':
+            data = np.array(df[['pca_x','pca_y']])
             redX = df.pca_x
             redY = df.pca_y
             
