@@ -172,13 +172,13 @@ class clusterOutliers(object):
     
     def db_out(self,df):
         clusterLabels = db_outliers.dbscan_w_outliers(df)
-        df['db_cluster']=clusterLabels
-        return df
+        return clusterLabels
     
     def save(self,of=None):
         if of == None:
             of=self.feats
         data.to_csv(of)
+        
     def plot_sample(self,df='self',pathtofits=None,
                     cluster_method="dbscan",reduction_method="tsne"):
         
@@ -202,31 +202,24 @@ class clusterOutliers(object):
         scalarMap = cmx.ScalarMappable(norm=cNorm, cmap='jet')
         
         data_out = df[clusterLabels==-1]
-        data_cluster = self.dataSample[clusterLabels!=-1]
+        files_out = data_out.index
+        data_cluster = df[clusterLabels!=-1]
         files_cluster = data_cluster.index
 
         if reduction_method=='tsne':
             data = np.array(df[['tsne_x','tsne_y']])
-            # tsneX has all the x-coordinates
-            redX = df.tsne_x
-            # tsneY has all the y-coordinates
-            redY = df.tsne_y
             
             outX = data_out.tsne_x
             outY = data_out.tsne_y
-            files_out = data_out.index
 
             clusterX = data_cluster.tsne_x
             clusterY = data_cluster.tsne_y
             
         elif reduction_method=='pca':
             data = np.array(df[['pca_x','pca_y']])
-            redX = df.pca_x
-            redY = df.pca_y
-            
+
             outX = data_out.pca_x
             outY = data_out.pca_y
-            files_out = data_out.index
             
             clusterX = data_cluster.pca_x
             clusterY = data_cluster.pca_y
@@ -380,8 +373,8 @@ class clusterOutliers(object):
             ax2.cla()
             ax3.cla()
             # Set those labels
-            ax.set_xlabel("T-SNE X",fontsize=18)
-            ax.set_ylabel("T-SNE Y",fontsize=18)
+            ax.set_xlabel("Reduced X",fontsize=18)
+            ax.set_ylabel("Reduced Y",fontsize=18)
             # Scatter the data
             ax.scatter(outX, outY,c="black",s=30,cmap='jet')
 
@@ -389,12 +382,12 @@ class clusterOutliers(object):
             hb = ax3.hexbin(clusterX,clusterY,mincnt=5,bins="log",cmap="inferno",gridsize=35)
             cb = fig.colorbar(hb)
             """
-            ax.scatter(clusterX,clusterY,s=30,c='g')
+            ax.scatter(clusterX,clusterY,s=30,c='b')
             ax3.scatter(clusterX,clusterY)
             """
             ax3.set_title("Center Density Detail")
-            ax3.set_xlabel("T-SNE X",fontsize=18)
-            ax3.set_ylabel("T-SNE Y",fontsize=18)
+            ax3.set_xlabel("Reduced X",fontsize=18)
+            ax3.set_ylabel("Reduced Y",fontsize=18)
 
             #for centerIndex in centerIndices:
             #    annotateCenter(currentData1,centerIndex)

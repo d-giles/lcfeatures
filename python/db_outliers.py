@@ -7,24 +7,23 @@ from sklearn.neighbors import NearestNeighbors
 
 def eps_est(data):
     # distance array containing all distances
-    nbrs = NearestNeighbors(n_neighbors=np.ceil(.2*len(data)), algorithm='ball_tree').fit(data)
+    nbrs = NearestNeighbors(n_neighbors=int(np.ceil(.2*len(data))), algorithm='ball_tree').fit(data)
     distances, indices = nbrs.kneighbors(data)
     # Distance to 2*N/100th instead of 4th because: ... reasons
-    distArr = distances[:,np.ceil(.02*len(data))]
+    neighbors = int(np.ceil(.02*len(data)))
+    distArr = distances[:,neighbors]
     distArr.sort()
     pts = range(len(distArr))
 
-    # The following looks for the first instance (past the mid point) where the mean of the following 50 points
-    # is at least 5% greater than the mean of the previous 50 points.
-    # Alternatively, perhaps a better method, we could consider the variance of the points and draw conclusions from that
-    if len(data) <= 200:
-        number = 10
-    else:
-        number = 50
-    cutoff = 1.05
-    for i in range(number,len(pts)-number):
-        if np.mean(distArr[i+1:i+number])>=cutoff*np.mean(distArr[i-number:i-1]) and i>(len(pts)%2+len(pts))/2:
-
+    # The following looks for the first instance (past the mid point)
+    # where the mean of the following 10 points
+    # is at least 20% greater than the mean of the previous 10 points.
+    # Alternatively, we could consider the variance of the points and draw conclusions from that
+    
+    number = 10
+    cutoff = 1.10
+    for i in range(int(np.ceil(len(pts)/2)),len(pts)-number):
+        if np.mean(distArr[i+1:i+number])>=cutoff*np.mean(distArr[i-number:i-1]):
             dbEps = distArr[i]
             break
 
@@ -38,7 +37,7 @@ def eps_est(data):
                 count[i]+=1
     average = np.median(count)
     sigma = np.std(count)
-    neighbors = average/2 # Divide by 2 for pts on the edges
+    neighbors = average/2 # Divide by 2 for pts on the edges of clusters
     print("""
     Epsilon is in the neighborhood of %s, 
     with an average of %s neighbors within epsilon,
