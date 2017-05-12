@@ -76,16 +76,19 @@ class clusterOutliers(object):
         self.sampleGenerated = True
         return self.filesSample
     
-    def randSampleWTabby(self, numLCs):
+    def randSampleWTabby(self, numLCs, df='self'):
         """
         Returns a random sample of numLCs light curves, data returned as an array
         of shape [numLCs,3,len(t)]
         Rerunning this, or randSample will replace the previous random sample.
         """
-        assert (numLCs < len(self.files)),"Number of samples greater than the number of files."
+        if type(df)==str:
+            df = self.data
+            
+        assert (numLCs < len(df.index)),"Number of samples greater than the number of files."
         self.numLCs = numLCs
         print("Creating random file list...")
-        self.dataSample = self.data.sample(n=numLCs)
+        self.dataSample = df.sample(n=numLCs)
 
         print("Checking for Tabby...")
         if not self.dataSample.index.str.contains('8462852').any():
@@ -144,14 +147,12 @@ class clusterOutliers(object):
         print("Done.")
         return fit
     
-    def pca_fit(self,data):
-        scaler = preprocessing.StandardScaler().fit(data)
-        scaledData = scaler.transform(data)
+    def pca_fit(self,df):
+        scaler = preprocessing.StandardScaler().fit(df)
+        scaledData = scaler.transform(df)
         pca = PCA(n_components=2)
         pca_fit = pca.fit_transform(scaledData)
-        data['pca_x'] = pca_fit.T[0]
-        data['pca_y'] = pca_fit.T[1]
-        return data
+        return pca_fit
     
     def sample_km_out(self):
         assert self.sampleTSNE,"Sample has not been reduced with sample_tsne_fit yet."

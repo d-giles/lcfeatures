@@ -16,12 +16,15 @@ def eps_est(data):
     pts = range(len(distArr))
 
     # The following looks for the first instance (past the mid point)
-    # where the mean of the following 10 points
-    # is at least 20% greater than the mean of the previous 10 points.
+    # where the mean of the following [number] points
+    # is at least (cutoff-1)*100% greater than the mean of the previous [number] points.
     # Alternatively, we could consider the variance of the points and draw conclusions from that
     
-    number = 10
-    cutoff = 1.10
+    if len(data) <= 200:
+        number = 10
+    else:
+        number = 50
+    cutoff = 1.05
     for i in range(int(np.ceil(len(pts)/2)),len(pts)-number):
         if np.mean(distArr[i+1:i+number])>=cutoff*np.mean(distArr[i-number:i-1]):
             dbEps = distArr[i]
