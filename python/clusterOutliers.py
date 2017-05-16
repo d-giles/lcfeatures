@@ -17,6 +17,8 @@ import matplotlib.gridspec as gridspec
 import seaborn as sns
 from sklearn.decomposition import PCA
 
+from numbapro import cuda
+
 import sys
 if sys.version_info[0] < 3:
     import Tkinter as Tk
@@ -181,7 +183,7 @@ class clusterOutliers(object):
         data.to_csv(of)
         
     def plot_sample(self,df='self',pathtofits=None,
-                    cluster_method="dbscan",reduction_method="tsne"):
+                    clusterLabels="dbscan",reduction_method="tsne"):
         
         if type(df) == str:
             if df == 'self':
@@ -194,9 +196,9 @@ class clusterOutliers(object):
         """--- import light curve data ---"""
         files = df.index
         
-        if cluster_method == 'dbscan':
+        if clusterLabels == 'dbscan':
             clusterLabels = df.db_cluster
-        elif cluster_method == 'kmeans':
+        elif clusterLabels == 'kmeans':
             clusterLabels = df.km_cluster
 
         cNorm  = colors.Normalize(vmin=0, vmax=max(clusterLabels))
@@ -253,32 +255,63 @@ class clusterOutliers(object):
             # empty subplot for center detail
             ax3 = fig.add_subplot(gs[0,4:])
 
-        def distance(point, event):
-            """Return distance between mouse position and given data point
+        @cuda.autojit
+        def distance_cuda(dx,dy,dd):
+            bx = cuda.blockIdx.x # which block in the grid?
+            bw = cuda.blockDim.x # what is the size of a block?
+            tx = cuda.threadIdx.x # unique thread ID within a blcok
+            i = tx + bx * bw
+            if i>len(dd):
+                return
+            
+            # d_ph is a distance placeholder
+            d_ph = (dx[i]-dx[0])**2+(dy[i]-dy[0])**2
 
-            Args:
-                point (np.array): np.array of shape (3,), with x,y,z in data coords
-                event (MouseEvent): mouse event (which contains mouse position in .x and .xdata)
-            Returns:
-                distance (np.float64): distance (in screen coords) between mouse pos and data point
-            """
-            assert point.shape == (2,), "distance: point.shape is wrong: %s, must be (2,)" % point.shape
-            x2,y2 = ax.transData.transform((point[0],point[1]))
+            dd[i]=d_ph**.5
+            return
+        
+        def distances(pts,ex,ey):
+            # Calculates distances between N points
+            pts = np.array(pts)
+            N=len(pts)
 
-            return np.sqrt ((x2 - event.x)**2 + (y2 - event.y)**2)
+            # Allocate host memory arrays
+            # Transpose pts array to n_dims x n_pts, each index of x contains all of a dimensions coordinates
+            XT = np.transpose(pts)
+            x = np.array(XT[0])
+            x = np.insert(x,0,ex)
+            y = np.array(XT[1])
+            y = np.insert(y,0,ey)
+            d = np.zeros(N)
 
-        def calcClosestDatapoint(XT, event):
+
+            # Allocate and copy GPU/device memory
+            d_x = cuda.to_device(x)
+            d_y = cuda.to_device(y)
+            d_d = cuda.to_device(d)
+
+            threads_per_block = 128
+            number_of_blocks =N/128+1 
+
+            distance_cuda [ number_of_blocks, threads_per_block ] (d_x,d_y,d_d)
+
+            d_d.copy_to_host(d)
+            return d[1:]   
+        
+        def calcClosestDatapoint(X, event):
             """Calculate which data point is closest to the mouse position.
 
             Args:
-                XT (np.array) - array of points, of shape (numPoints, 2)
+                X (np.array) - array of points, of shape (numPoints, 2)
                 event (MouseEvent) - mouse event (containing mouse position)
             Returns:
                 smallestIndex (int) - the index (into the array of points X) of the element closest to the mouse position
             """
-            distances = [distance (XT[:,i], event) for i in range(XT.shape[1])]
-
-            return np.argmin(distances)
+            ex,ey = ax.transData.inverted().transform((event.x,event.y))
+            
+            #distances = [distance (XT[:,i], event) for i in range(XT.shape[1])]
+            Ds = distances(X,ex,ey)
+            return np.argmin(Ds)
 
         def drawData(index):
             # Plots the lightcurve of the point chosen
@@ -348,13 +381,13 @@ class clusterOutliers(object):
 
         def onMouseClick(event, X):
             """Event that is triggered when mouse is clicked. Shows lightcurve for data point closest to mouse."""
-            XT = np.array(X.T) # array organized by feature, each in it's own array
-            closestIndex = calcClosestDatapoint(XT, event)
+            #XT = np.array(X.T) # array organized by feature, each in it's own array
+            closestIndex = calcClosestDatapoint(X, event)
             drawData(closestIndex)
 
         def onMouseRelease(event, X):
-            XT = np.array(X.T)
-            closestIndex = calcClosestDatapoint(XT, event)
+            #XT = np.array(X.T)
+            closestIndex = calcClosestDatapoint(X, event)
             annotatePt(X,closestIndex)
             #for centerIndex in centerIndices:
             #    annotateCenter(XT,centerIndex)

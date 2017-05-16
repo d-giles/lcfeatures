@@ -6,6 +6,7 @@ from sklearn.cluster import DBSCAN
 from sklearn.neighbors import NearestNeighbors
 
 def eps_est(data):
+    
     # distance array containing all distances
     nbrs = NearestNeighbors(n_neighbors=int(np.ceil(.2*len(data))), algorithm='ball_tree').fit(data)
     distances, indices = nbrs.kneighbors(data)
@@ -51,8 +52,9 @@ def eps_est(data):
 def dbscan_w_outliers(data):
     X=np.array([np.array(data.loc[i]) for i in data.index])
     print("Clustering data...")
-    dbEps,neighbors= eps_est(X)
-    
+    X_sample = data.sample(n=10000)
+    dbEps,neighbors= eps_est(X_sample)
+    neighbors = int(neighbors*len(data)/10000)
     print("Clustering data with DBSCAN...")
     est = DBSCAN(eps=dbEps,min_samples=neighbors)
     est.fit(X)
