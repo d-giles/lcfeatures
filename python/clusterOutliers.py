@@ -196,10 +196,11 @@ class clusterOutliers(object):
         """--- import light curve data ---"""
         files = df.index
         
-        if clusterLabels == 'dbscan':
-            clusterLabels = df.db_cluster
-        elif clusterLabels == 'kmeans':
-            clusterLabels = df.km_cluster
+        if type(clusterLabels) == str:
+            if clusterLabels == 'dbscan':
+                clusterLabels = df.db_cluster
+            elif clusterLabels == 'kmeans':
+                clusterLabels = df.km_cluster
 
         cNorm  = colors.Normalize(vmin=0, vmax=max(clusterLabels))
         scalarMap = cmx.ScalarMappable(norm=cNorm, cmap='jet')
@@ -410,10 +411,10 @@ class clusterOutliers(object):
             ax.set_xlabel("Reduced X",fontsize=18)
             ax.set_ylabel("Reduced Y",fontsize=18)
             # Scatter the data
-            ax.scatter(outX, outY,c="black",s=30,cmap='jet')
+            ax.scatter(outX, outY,c="red",s=30,alpha=.5)
 
-            ax.hexbin(clusterX,clusterY,mincnt=5,bins="log",cmap="inferno",gridsize=35)
-            hb = ax3.hexbin(clusterX,clusterY,mincnt=5,bins="log",cmap="inferno",gridsize=35)
+            ax.hexbin(clusterX,clusterY,mincnt=5,bins="log",cmap="viridis",gridsize=35)
+            hb = ax3.hexbin(clusterX,clusterY,mincnt=5,bins="log",cmap="viridis",gridsize=35)
             cb = fig.colorbar(hb)
             """
             ax.scatter(clusterX,clusterY,s=30,c='b')

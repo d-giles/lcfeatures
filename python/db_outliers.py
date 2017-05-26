@@ -51,10 +51,14 @@ def eps_est(data):
 
 def dbscan_w_outliers(data):
     X=np.array([np.array(data.loc[i]) for i in data.index])
-    print("Clustering data...")
-    X_sample = data.sample(n=10000)
+    print("Estimating Parameters...")
+    if len(X)>10000:
+        X_sample = data.sample(n=10000)
+    else:
+        X_sample = data
     dbEps,neighbors= eps_est(X_sample)
-    neighbors = int(neighbors*len(data)/10000)
+    if len(X)>10000:
+        neighbors = int(neighbors*len(data)/10000)
     print("Clustering data with DBSCAN...")
     est = DBSCAN(eps=dbEps,min_samples=neighbors)
     est.fit(X)
