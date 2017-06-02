@@ -187,6 +187,7 @@ def outliers(data,clusterLabels,centers):
     Initializing arrays
     """
     
+    
     dataByCluster = []
     clusterIndices = []
             
@@ -199,13 +200,13 @@ def outliers(data,clusterLabels,centers):
             ==== Calculating distances to each point ====
         Calculate distances for each point to the center of its cluster
         """
-        distFromCenter = [sum((data[pt]-centers[i])**2)**.5 for pt in clusterLabels[clusterLabels==i]]
+        distFromCenter = [sum((pt-centers[i])**2)**.5 for pt in data[clusterLabels==i]]
 
         """
         ========== Finding points outside of the cutoff ===========
         """
         sigma = np.std(distFromCenter)
-        cutoff = 2*sigma        
+        cutoff = 4*sigma        
         """
             ==== Finding outliers and the standard (defined by the closest to the center) ====
         """
