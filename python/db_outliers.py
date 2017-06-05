@@ -63,7 +63,7 @@ def dbscan_w_outliers(data):
     est = DBSCAN(eps=dbEps,min_samples=neighbors)
     est.fit(X)
     clusterLabels = est.labels_
-
+    # Outlier score: distance to 4th neighbor?
     numout = len(clusterLabels[clusterLabels==-1])
     numclusters = max(clusterLabels+1)
     if data.index.str.contains('8462852').any():

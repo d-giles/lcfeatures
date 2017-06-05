@@ -195,11 +195,12 @@ def outliers(data,clusterLabels,centers):
     allOutliers=[]
     clusters = np.array(clusterLabels)
     for i in range(nclusters):
-
+        ind_ref = [j for j in range(len(data)) if clusterLabels[j] == i]
         """
             ==== Calculating distances to each point ====
         Calculate distances for each point to the center of its cluster
         """
+        # Outlier score = distFromCenter
         distFromCenter = [sum((pt-centers[i])**2)**.5 for pt in data[clusterLabels==i]]
 
         """
@@ -212,11 +213,10 @@ def outliers(data,clusterLabels,centers):
         """
         
         # returns cluster indices of the outliers and the typical lcs
-        outliers=[j[0] for j in enumerate(distFromCenter) if j[1]>=cutoff]
-        typical = [j[0] for j in enumerate(distFromCenter) if j[1]==min(distFromCenter)]
-
+        outliers=[ind_ref[j[0]] for j in enumerate(distFromCenter) if j[1]>=cutoff]
+        typical = [ind_ref[j[0]] for j in enumerate(distFromCenter) if j[1]==min(distFromCenter)]
+        # TODO: Sparse "clusters" also outliers
         clusters[outliers]=-1
-        clusters[typical]=0
         
     return clusters
 
