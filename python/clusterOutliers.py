@@ -17,7 +17,7 @@ import matplotlib.gridspec as gridspec
 import seaborn as sns
 from sklearn.decomposition import PCA
 
-from numbapro import cuda
+from accelerate.cuda import cuda
 
 import sys
 if sys.version_info[0] < 3:
@@ -256,7 +256,7 @@ class clusterOutliers(object):
             # empty subplot for center detail
             ax3 = fig.add_subplot(gs[0,4:])
 
-        @cuda.autojit
+        @cuda.jit
         def distance_cuda(dx,dy,dd):
             bx = cuda.blockIdx.x # which block in the grid?
             bw = cuda.blockDim.x # what is the size of a block?

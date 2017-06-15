@@ -13,10 +13,10 @@ from multiprocessing import Pool,cpu_count
 import sys
 from datetime import datetime
 #from accelerate import cuda
-from numbapro import cuda
+from accelerate.cuda import cuda
 from sklearn.cluster import KMeans
 
-@cuda.autojit
+@cuda.jit
 def cu_worker(X, mu, bmk):
     bx =cuda.blockIdx.x
     bw = cuda.blockDim.x

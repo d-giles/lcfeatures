@@ -5,7 +5,7 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import NearestNeighbors
 
-def eps_est(data):
+def eps_est_recursive(data):
     
     # distance array containing all distances
     nbrs = NearestNeighbors(n_neighbors=int(np.ceil(.2*len(data))), algorithm='ball_tree').fit(data)
@@ -49,6 +49,33 @@ def eps_est(data):
     """%(dbEps,average,neighbors))
     return dbEps,neighbors
 
+def eps_est(data,n):
+    
+    # distance array containing all distances
+    nbrs = NearestNeighbors(n_neighbors=int(np.ceil(.1*len(data))), algorithm='ball_tree',n_jobs=-1).fit(data)
+    distances, indices = nbrs.kneighbors(data)
+    neighbors = n
+    distArr = distances[:,neighbors]
+    distArr.sort()
+    pts = range(len(distArr))
+
+    # The following looks for the first instance (past the mid point)
+    # where the mean of the following [number] points
+    # is at least (cutoff-1)*100% greater than the mean of the previous [number] points.
+    
+    number = 5
+    cutoff = 1.05
+    for i in range(int(np.ceil(len(pts)/2)),len(pts)-number):
+        if np.mean(distArr[i+1:i+number])>=cutoff*np.mean(distArr[i-number:i-1]):
+            dbEps = distArr[i]
+            pt=pts[i]
+            break
+    print("""
+    Epsilon is in the neighborhood of %s.
+    """%dbEps)
+    
+    return dbEps,distArr
+
 def dbscan_w_outliers(data):
     X=np.array([np.array(data.loc[i]) for i in data.index])
     print("Estimating Parameters...")
@@ -56,7 +83,7 @@ def dbscan_w_outliers(data):
         X_sample = data.sample(n=10000)
     else:
         X_sample = data
-    dbEps,neighbors= eps_est(X_sample)
+    dbEps,scores = eps_est(X_sample)
     if len(X)>10000:
         neighbors = int(neighbors*len(data)/10000)
     print("Clustering data with DBSCAN...")
