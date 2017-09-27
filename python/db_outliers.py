@@ -49,7 +49,7 @@ def eps_est_recursive(data):
     """%(dbEps,average,neighbors))
     return dbEps,neighbors
 
-def eps_est(data,n):
+def eps_est(data,n=4,verbose=True):
     
     # distance array containing all distances
     nbrs = NearestNeighbors(n_neighbors=int(np.ceil(.1*len(data))), algorithm='ball_tree',n_jobs=-1).fit(data)
@@ -70,37 +70,44 @@ def eps_est(data,n):
             dbEps = distArr[i]
             pt=pts[i]
             break
-    print("""
-    Epsilon is in the neighborhood of %s.
-    """%dbEps)
+    if verbose:
+        print("""
+        Epsilon is in the neighborhood of %s.
+        """%dbEps)
     
     return dbEps,distArr
 
-def dbscan_w_outliers(data):
+def dbscan_w_outliers(data,check_tabby=False,verbose=True):
     X=np.array([np.array(data.loc[i]) for i in data.index])
-    print("Estimating Parameters...")
+    if verbose:print("Estimating Parameters...")
     if len(X)>10000:
         X_sample = data.sample(n=10000)
     else:
         X_sample = data
-    dbEps,scores = eps_est(X_sample)
+    dbEps,scores = eps_est(X_sample,verbose=verbose)
     if len(X)>10000:
         neighbors = int(neighbors*len(data)/10000)
-    print("Clustering data with DBSCAN...")
+    if verbose:print("Clustering data with DBSCAN...")
     est = DBSCAN(eps=dbEps,min_samples=neighbors)
     est.fit(X)
     clusterLabels = est.labels_
     # Outlier score: distance to 4th neighbor?
     numout = len(clusterLabels[clusterLabels==-1])
     numclusters = max(clusterLabels+1)
-    if data.index.str.contains('8462852').any():
-        tabbyInd = list(data.index).index(data[data.index.str.contains('8462852')].index[0])
-        if clusterLabels[tabbyInd] == -1:
-            print("Tabby has been found to be an outlier in DBSCAN.")
+    if check_tabby:
+        if data.index.str.contains('8462852').any():
+            tabbyInd = list(data.index).index(data[data.index.str.contains('8462852')].index[0])
+            if clusterLabels[tabbyInd] == -1:
+                print("Tabby has been found to be an outlier in DBSCAN.")
+            else:
+                print("Tabby has not Not found to be an outlier in DBSCAN")
         else:
-            print("Tabby has not Not found to be an outlier in DBSCAN")
-        
-    print("There were %s clusters and %s total outliers"%(numclusters,numout))
+            print("MISSING: Tabby is not in this data.")
+    if verbose:
+        if numclusters==1:
+            print("There was %s cluster and %s total outliers"%(numclusters,numout))
+        else:
+            print("There were %s clusters and %s total outliers"%(numclusters,numout))
 
     return clusterLabels
 

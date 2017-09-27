@@ -246,15 +246,16 @@ class clusterOutliers(object):
         toolbar.update()
         canvas._tkcanvas.pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
 
-        gs = gridspec.GridSpec(2,6)
+        gs = gridspec.GridSpec(2,100)
 
         with sns.axes_style("white"):
             # empty subplot for scattered data
-            ax = fig.add_subplot(gs[0,:4])
+            ax = fig.add_subplot(gs[0,:62])
             # empty subplot for lightcurves
             ax2 = fig.add_subplot(gs[1,:])
             # empty subplot for center detail
-            ax3 = fig.add_subplot(gs[0,4:])
+            ax3 = fig.add_subplot(gs[0,67:])
+
 
         @cuda.jit
         def distance_cuda(dx,dy,dd):
@@ -367,16 +368,17 @@ class clusterOutliers(object):
                 annotatePt.emph.remove()
             if hasattr(annotatePt, 'emphCD'):
                 annotatePt.emphCD.remove()
-
+            x_ax = ax.get_xlim()[1]-ax.get_xlim()[0]
+            y_ax = ax.get_ylim()[1]-ax.get_ylim()[0]
             # Get data point from array of points X, at position index
             annotatePt.label = ax.annotate( "",
-                xy = (x2, y2), xytext = (x2+10, y2+10),
-                arrowprops = dict(headlength=20,headwidth=20,width=6,shrink=.1,color='red'))
-            annotatePt.emph = ax.scatter(x2,y2,marker='o',s=50,c='red')
+                xy = (x2, y2), xytext = (x2+.1*x_ax, y2+.2*y_ax),
+                arrowprops = dict(headlength=20,headwidth=20,width=6,shrink=.1,color='black'))
+            annotatePt.emph = ax.scatter(x2,y2,marker='o',s=50,c='orange')
             if files[index] in files_cluster:
-                annotatePt.emphCD = ax3.scatter(x2,y2,marker='o',s=150,c='red')
+                annotatePt.emphCD = ax3.scatter(x2,y2,marker='o',s=150,c='orange')
             else:
-                annotatePt.emphCD = ax.scatter(x2,y2,marker='o',s=50,c='red')
+                annotatePt.emphCD = ax.scatter(x2,y2,marker='o',s=50,c='orange')
             canvas.draw()
 
 
@@ -420,10 +422,12 @@ class clusterOutliers(object):
             ax.scatter(clusterX,clusterY,s=30,c='b')
             ax3.scatter(clusterX,clusterY)
             """
-            ax3.set_title("Center Density Detail")
+            ax3.set_title("Center Density Detail",fontsize=14)
             ax3.set_xlabel("Reduced X",fontsize=18)
             ax3.set_ylabel("Reduced Y",fontsize=18)
-
+            ax.tick_params(axis='both',labelsize=18)
+            ax2.tick_params(axis='both',labelsize=18)
+            ax3.tick_params(axis='both',labelsize=18)
             #for centerIndex in centerIndices:
             #    annotateCenter(currentData1,centerIndex)
 
