@@ -173,8 +173,8 @@ class clusterOutliers(object):
         self.dataSample['db_cluster']=clusterLabels
         return self.dataSample[self.dataSample.db_cluster==-1].index
     
-    def db_out(self,df):
-        clusterLabels = db_outliers.dbscan_w_outliers(df)
+    def db_out(self,df,check_tabby=False,verbose=True):
+        clusterLabels = db_outliers.dbscan_w_outliers(df,check_tabby,verbose)
         return clusterLabels
     
     def save(self,of=None):

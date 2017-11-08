@@ -52,10 +52,10 @@ def eps_est_recursive(data):
 def eps_est(data,n=4,verbose=True):
     
     # distance array containing all distances
-    nbrs = NearestNeighbors(n_neighbors=int(np.ceil(.1*len(data))), algorithm='ball_tree',n_jobs=-1).fit(data)
+    if verbose:print("Calculating nearest neighbor distances...")
+    nbrs = NearestNeighbors(n_neighbors=int(np.ceil(min(.05*len(data),500))), algorithm='ball_tree',n_jobs=-1).fit(data)
     distances, indices = nbrs.kneighbors(data)
-    neighbors = n
-    distArr = distances[:,neighbors]
+    distArr = distances[:,n]
     distArr.sort()
     pts = range(len(distArr))
 
@@ -65,6 +65,7 @@ def eps_est(data,n=4,verbose=True):
     
     number = 5
     cutoff = 1.05
+    if verbose:print("Finding elbow...")
     for i in range(int(np.ceil(len(pts)/2)),len(pts)-number):
         if np.mean(distArr[i+1:i+number])>=cutoff*np.mean(distArr[i-number:i-1]):
             dbEps = distArr[i]
@@ -77,18 +78,23 @@ def eps_est(data,n=4,verbose=True):
     
     return dbEps,distArr
 
-def dbscan_w_outliers(data,check_tabby=False,verbose=True):
+def dbscan_w_outliers(data,min_n=4,check_tabby=False,verbose=True):
+    # numpy array of dataframe for fit later
     X=np.array([np.array(data.loc[i]) for i in data.index])
     if verbose:print("Estimating Parameters...")
     if len(X)>10000:
+        # Large datasets have presented issues where a single high density cluster 
+        # leads to an epsilon of 0.0 for 4 neighbors.
+        # We adjust for this by calculating epsilon with 4 neighbors
+        # for a sample of the data, then we scale min_neighbors accordingly.
+        if verbose:print("Sampling data for parameter estimation...")
         X_sample = data.sample(n=10000)
     else:
         X_sample = data
-    dbEps,scores = eps_est(X_sample,verbose=verbose)
-    if len(X)>10000:
-        neighbors = int(neighbors*len(data)/10000)
+    dbEps,distArr = eps_est(X_sample,n=min_n,verbose=verbose)
+    
     if verbose:print("Clustering data with DBSCAN...")
-    est = DBSCAN(eps=dbEps,min_samples=neighbors)
+    est = DBSCAN(eps=dbEps,min_samples=min_n,n_jobs=-1)
     est.fit(X)
     clusterLabels = est.labels_
     # Outlier score: distance to 4th neighbor?
@@ -100,7 +106,7 @@ def dbscan_w_outliers(data,check_tabby=False,verbose=True):
             if clusterLabels[tabbyInd] == -1:
                 print("Tabby has been found to be an outlier in DBSCAN.")
             else:
-                print("Tabby has not Not found to be an outlier in DBSCAN")
+                print("Tabby has NOT been found to be an outlier in DBSCAN")
         else:
             print("MISSING: Tabby is not in this data.")
     if verbose:
