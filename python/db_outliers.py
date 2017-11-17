@@ -4,6 +4,7 @@ DBSCAN Clustering
 import numpy as np
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import NearestNeighbors
+import matplotlib.pyplot as plt
 
 def eps_est_recursive(data):
     
@@ -53,17 +54,19 @@ def eps_est(data,n=4,verbose=True):
     
     # distance array containing all distances
     if verbose:print("Calculating nearest neighbor distances...")
-    nbrs = NearestNeighbors(n_neighbors=int(np.ceil(min(.05*len(data),500))), algorithm='ball_tree',n_jobs=-1).fit(data)
+    nbrs = NearestNeighbors(n_neighbors=int(max(n+1,100)), algorithm='ball_tree',n_jobs=-1).fit(data)
     distances, indices = nbrs.kneighbors(data)
+    del nbrs
     distArr = distances[:,n]
     distArr.sort()
+    del distances
     pts = range(len(distArr))
 
     # The following looks for the first instance (past the mid point)
     # where the mean of the following [number] points
     # is at least (cutoff-1)*100% greater than the mean of the previous [number] points.
     
-    number = 5
+    number = int(np.ceil(len(data)/500))
     cutoff = 1.05
     if verbose:print("Finding elbow...")
     for i in range(int(np.ceil(len(pts)/2)),len(pts)-number):
@@ -71,11 +74,11 @@ def eps_est(data,n=4,verbose=True):
             dbEps = distArr[i]
             pt=pts[i]
             break
+
     if verbose:
         print("""
-        Epsilon is in the neighborhood of %s.
-        """%dbEps)
-    
+        Epsilon is in the neighborhood of {:05.2f}.
+        """.format(dbEps))
     return dbEps,distArr
 
 def dbscan_w_outliers(data,min_n=4,check_tabby=False,verbose=True):
@@ -86,20 +89,41 @@ def dbscan_w_outliers(data,min_n=4,check_tabby=False,verbose=True):
         # Large datasets have presented issues where a single high density cluster 
         # leads to an epsilon of 0.0 for 4 neighbors.
         # We adjust for this by calculating epsilon with 4 neighbors
-        # for a sample of the data, then we scale min_neighbors accordingly.
+        # for a sample of the data, then we scale min_neighbors (proportional to density) accordingly
         if verbose:print("Sampling data for parameter estimation...")
         X_sample = data.sample(n=10000)
     else:
         X_sample = data
     dbEps,distArr = eps_est(X_sample,n=min_n,verbose=verbose)
+    if len(X)>10000:
+        if verbose:print("Scaling density...")
+        min_n = len(X)/10000*min_n
     
-    if verbose:print("Clustering data with DBSCAN...")
-    est = DBSCAN(eps=dbEps,min_samples=min_n,n_jobs=-1)
-    est.fit(X)
-    clusterLabels = est.labels_
+    if verbose:print("Clustering data with DBSCAN, eps={:05.2f},min_samples={}...".format(dbEps,min_n))
+    #est = DBSCAN(eps=dbEps,min_samples=min_n,n_jobs=-1)
+    #est.fit(X)
+    #clusterLabels = est.labels_
     # Outlier score: distance to 4th neighbor?
-    numout = len(clusterLabels[clusterLabels==-1])
-    numclusters = max(clusterLabels+1)
+    nbrs = NearestNeighbors(n_neighbors=min_n+1, algorithm='ball_tree',n_jobs=-1).fit(data)
+    distances, indices = nbrs.kneighbors(data)
+    del nbrs
+    distArr = distances[:,min_n]
+
+    d = {True:-1,False:0}
+    clusterLabels = np.array([d[pt>dbEps] for pt in distArr])
+    for i,label in enumerate(clusterLabels):
+        # For all identified outliers (pts w/o enough neighbors):
+        if label == -1:
+            j=1
+            # for the neighbors within epsilon
+            while distances[i,j]<dbEps:
+                # if a neighbor is labeled as part of the cluster,
+                if clusterLabels[indices[i,j]] == 0:
+                    # then this pt is an edge point
+                    clusterLabels[i]=1
+                    break
+                j+=1
+        
     if check_tabby:
         if data.index.str.contains('8462852').any():
             tabbyInd = list(data.index).index(data[data.index.str.contains('8462852')].index[0])
@@ -109,11 +133,14 @@ def dbscan_w_outliers(data,min_n=4,check_tabby=False,verbose=True):
                 print("Tabby has NOT been found to be an outlier in DBSCAN")
         else:
             print("MISSING: Tabby is not in this data.")
+                     
+    numout = len(clusterLabels[clusterLabels==-1])
+    numclusters = max(clusterLabels+1)
     if verbose:
         if numclusters==1:
-            print("There was %s cluster and %s total outliers"%(numclusters,numout))
+            print("There was {:d} cluster and {:d} total outliers".format(numclusters,numout))
         else:
-            print("There were %s clusters and %s total outliers"%(numclusters,numout))
+            print("There were {:d} clusters and {:d} total outliers".format(numclusters,numout))
 
     return clusterLabels
 
