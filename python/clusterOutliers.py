@@ -31,6 +31,7 @@ import db_outliers
 
 class clusterOutliers(object):
     def __init__(self,feats,fitsDir):
+        self.feats = feats
         self.data = pd.read_csv(feats,index_col=0)
         if fitsDir[-1]=="/":
             self.fitsDir = fitsDir
@@ -78,7 +79,7 @@ class clusterOutliers(object):
         self.sampleGenerated = True
         return self.filesSample
     
-    def randSampleWTabby(self, numLCs, df='self'):
+    def randSampleWTabby(self, numLCs=10000, df='self'):
         """
         Returns a random sample of numLCs light curves, data returned as an array
         of shape [numLCs,3,len(t)]
@@ -173,14 +174,16 @@ class clusterOutliers(object):
         self.dataSample['db_cluster']=clusterLabels
         return self.dataSample[self.dataSample.db_cluster==-1].index
     
-    def db_out(self,df):
-        clusterLabels = db_outliers.dbscan_w_outliers(df)
+    def db_out(self,df,neighbors=4,check_tabby=False,verbose=True):
+        clusterLabels = db_outliers.dbscan_w_outliers(data=df,min_n=neighbors,check_tabby=check_tabby,verbose=verbose)
         return clusterLabels
     
-    def save(self,of=None):
+    def save(self,df=None,of=None):
         if of == None:
             of=self.feats
-        data.to_csv(of)
+        if df==None:
+            df=self.data
+        df.to_csv(of)
         
     def plot_sample(self,df='self',pathtofits=None,
                     clusterLabels="dbscan",reduction_method="tsne"):
