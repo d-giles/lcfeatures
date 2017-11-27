@@ -88,8 +88,8 @@ def dbscan_w_outliers(data,min_n=4,check_tabby=False,verbose=True):
     if len(X)>10000:
         # Large datasets have presented issues where a single high density cluster 
         # leads to an epsilon of 0.0 for 4 neighbors.
-        # We adjust for this by calculating epsilon with 4 neighbors
-        # for a sample of the data, then we scale min_neighbors (proportional to density) accordingly
+        # We adjust for this by calculating epsilon for a sample of the data,
+        # then we scale min_neighbors accordingly
         if verbose:print("Sampling data for parameter estimation...")
         X_sample = data.sample(n=10000)
     else:
