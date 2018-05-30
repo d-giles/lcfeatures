@@ -11,38 +11,38 @@ the index "i" refers to the index in the entire array of lightcurve files, i.e. 
 
 longtermtrend and yoffset - he did a linear fit to the entire lightcurve to capture overall slope, if any-- longtermtrend is the slope of this linear fit, yoffset is the intercept
 
-corrpdc - this is some crazy ass version of normalizing the lightcurve, where hesubtracted off the linear trend computed above from the entire lightcurve. In the rewrite I normalized the flux by the median to begin with, so I've used "nf" (the normalize flux in place of both numpdc and corrpdc. Hopefully that will be ok.  
+corrpdc - this is some crazy ass version of normalizing the lightcurve, where he divided off the linear trend computed above from the entire lightcurve. In the rewrite I normalized the flux by the median to begin with, so I've used "nf" (the normalize flux in place of both numpdc and corrpdc. Hopefully that will be ok.  
 
 Features:
 
-1  longtermtrend
-2  meanmedrat
-3  skews
-4  varss 
-5  coeffvar 
-6  stds 
-7  numoutliers 
-8  numnegoutliers 
-9  numposoutliers 
-10 numout1s 
-11 kurt 
-12 mad 
-13 maxslope 
-14 minslope 
-15 meanpslope 
-16 meannslope 
-17 g_asymm
-18 rough_g_asymm 
-19 diff_asymm 
-20 skewslope 
-21 varabsslope 
-22 varslope 
-23 meanabsslope 
-24 absmeansecder 
-25 num_pspikes
-26 num_nspikes 
-27 num_sdspikes # now called "num_psdspikes"
-28 num_sdspikes2 #now called "num_nsdspikes"
+1  longtermtrend - Linear fit coeffecient, does the object get brighter or dimmer on average over time?
+2  meanmedrat - ratio between the mean and the median, mean/median
+3  skews - The skew of the distribution of fluxes, positive value indicates flux is skewed to values greater than the median value. A normal distribution has a skew of zero.
+4  varss - variance of the flux
+5  coeffvar - coeffecient of variability, the ratio of the standard deviation of the flux to the mean of the flux
+6  stds - standard deviation of the flux
+7  numout1s - number of flux values outside of 1-sigma deviation
+8  numnegoutliers - number of fluxes values 4-sigma less than the mean
+9  numposoutliers - number of flux values 4-sigma greater than the mean
+10 numoutliers - total number of flux values 4-sigma away from the mean
+11 kurt - kurtosis, a measure of the sharpness of the peak of the distribution of fluxes. 1/N*sum((nf-nf_mean)^4)/stds^4
+12 mad - Median Absolute Difference, the median difference from the median flux
+13 maxslope - the greatest positive slope between two points, dnf/dt. Uses the 99th percentile rather than the actual largest.
+14 minslope - the most negative slope btw two points.
+15 meanpslope - the mean of postive slopes
+16 meannslope - the mean of negative slopes
+17 g_asymm - ratio of mean postive slopes to the mean of negative slopes (defaults to 10 if the mean of negative slopes is 0, i.e. there are no negative slopes)
+18 rough_g_asymm - ratio of the number of positive slopes to the number of negative slopes (10 if no negative slopes)
+19 diff_asymm - diffence between the mean of the positive slopes and the absolute mean of the negative slopes
+20 skewslope - skew of the distribution of slopes
+21 meanabsslope -  mean of the absolute slopes
+22 varabsslope -  variance of the absolute slopes
+23 varslope - variance of the slopes
+24 absmeansecder - absolute mean of the second derivative
+25 num_pspikes - Number of positive spikes as defined by a positive slope 3 sigma greater than the mean positive slope.
+26 num_nspikes - Number of negative spikes as defined by a negative slope 3 sigma smaller than the mean negative slope.
+27 num_sdspikes # now called "num_psdspikes" - number of positive second derivative spikes
+28 num_sdspikes2 #now called "num_nsdspikes" - number of negative second derivative spikes 
 29 stdratio 
 30 pstrend 
 31 num_zcross 

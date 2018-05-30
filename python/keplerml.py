@@ -124,20 +124,29 @@ def featureCalculation(nfile,t,nf,err):
     try:
 
         longtermtrend = np.polyfit(t, nf, 1)[0] # Feature 1 (Abbr. F1) overall slope
-        yoff = np.polyfit(t, nf, 1)[1] # Not a feature? y-intercept of linear fit
-        meanmedrat = np.mean(nf) / np.median(nf) # F2
+        yoff = np.polyfit(t, nf, 1)[1] # Not a feature, y-intercept of linear fit
+        nf_mean = np.mean(nf)
+        nf_med = np.median(nf)
+        stds = np.std(nf) #f6
+        meanmedrat = nf_mean / nf_med # F2
         skews = stats.skew(nf) # F3
         varss = np.var(nf) # F4
-        coeffvar = np.std(nf)/np.mean(nf) #F5
-        stds = np.std(nf) #F6
+        coeffvar = stds/nf_mean #F5
 
-        corrnf = nf - longtermtrend*t - yoff #this removes any linear slope to lc so you can look at just troughs - is this a sign err tho?
-        # D: I don't think there's a sign error
 
-        posthreshold = np.mean(nf)+4*np.std(nf)
-        negthreshold = np.mean(nf)-4*np.std(nf)
+        corrnf = nf - longtermtrend*t - yoff #this removes any linear trend of lc so you can look at just troughs
+
+        posthreshold = nf_mean+4*stds
+        negthreshold = nf_mean-4*stds
 
         numposoutliers,numnegoutliers,numout1s=0,0,0
+        for nfj in nf:
+            if abs(nf_mean-nfj>stds):
+                numout1s += 1 #F7
+                if nfj>posthreshold:
+                    numposoutliers +=1 #F8
+                elif nfj<negthreshold:
+                    numnegoutliers +=1 #F9
         for j in range(len(nf)):
             # First checks if nf[j] is outside of 1 sigma
             if abs(np.mean(nf)-nf[j])>np.std(nf):
@@ -150,7 +159,7 @@ def featureCalculation(nfile,t,nf,err):
         
         kurt = stats.kurtosis(nf)
 
-        mad = np.median([abs(nf[j]-np.median(nf)) for j in range(len(nf))])
+        mad = np.median([abs(nfj-nf_med) for nfj in nf])
 
         # slopes array contains features 13-30
         
@@ -168,7 +177,7 @@ def featureCalculation(nfile,t,nf,err):
         minslope=np.percentile(slopes,1) #F14
 
         # Separating positive slopes and negative slopes
-        # Should both include the 0 slope? I'd guess there wouldn't be a ton, but still...
+        # Should both include the 0 slope? It doesn't matter for calculating the means later on...
         pslope=[slope for slope in slopes if slope>=0]
         nslope=[slope for slope in slopes if slope<=0]
         # Looking at the average (mean) positive and negative slopes
@@ -235,11 +244,15 @@ def featureCalculation(nfile,t,nf,err):
         for slope in slopes:
             if slope>=meanpslope+3*pslopestds:
                 num_pspikes+=1 #F25
-            elif slope<=meanslope-3*nslopestds:
+            elif slope<=meannslope-3*nslopestds: 
+                # 5/30/18, discovered a typo here. meanslope was missing an 'n', i.e. all data
+                # processed prior to this date has num_nspikes defined as meanslope-3*nslopestds
+                # which will overestimate the number of negative spikes since meanslope is inherently
+                # greater than meannslope.
                 num_nspikes+=1 #F26
-
+        """BOOKMARK 5/30/18"""
         for sder in secder:
-            if sder>=4*sdstds:
+            if sder>=4*sdstds: # why doesn't this have a mean or median offset?
                 num_psdspikes+=1 #F27
             elif sder<=-4*sdstds:
                 num_nsdspikes+=1 #F28
