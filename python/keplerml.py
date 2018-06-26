@@ -138,7 +138,8 @@ def featureCalculation(nfile,t,nf,err):
 
         posthreshold = nf_mean+4*stds
         negthreshold = nf_mean-4*stds
-
+        
+        #TODO: Combine all functions that loop through the whole lightcurve into one for loop
         numposoutliers,numnegoutliers,numout1s=0,0,0
         for nfj in nf:
             if abs(nf_mean-nfj>stds):
@@ -147,14 +148,7 @@ def featureCalculation(nfile,t,nf,err):
                     numposoutliers +=1 #F8
                 elif nfj<negthreshold:
                     numnegoutliers +=1 #F9
-        for j in range(len(nf)):
-            # First checks if nf[j] is outside of 1 sigma
-            if abs(np.mean(nf)-nf[j])>np.std(nf):
-                numout1s += 1 #F7
-                if nf[j]>posthreshold:
-                    numposoutliers += 1 #F8
-                elif nf[j]<negthreshold:
-                    numnegoutliers += 1 #F9
+
         numoutliers=numposoutliers+numnegoutliers #F10
         
         kurt = stats.kurtosis(nf)
@@ -166,7 +160,7 @@ def featureCalculation(nfile,t,nf,err):
         # delta nf/delta t
         slopes=[(nf[j+1]-nf[j])/(t[j+1]-t[j]) for j in range(len(nf)-1)]
 
-        #corrslopes removes the longterm linear trend (if any) and then looks at the slope
+        #corrslopes (corrected slopes) removes the longterm linear trend (if any) and then looks at the slope
         corrslopes=[(corrnf[j+1]-corrnf[j])/(t[j+1]-t[j]) for j in range (len(corrnf)-1)] #F11
         meanslope = np.mean(slopes) #F12
 
@@ -211,15 +205,15 @@ def featureCalculation(nfile,t,nf,err):
         varabsslope=np.var(absslopes) #F22
         varslope=np.var(slopes) #F23
 
-        #secder = Second Derivative
+        # secder = Second Derivative
         # Reminder for self: the slope is "located" halfway between the flux and time points, 
         # so the delta t in the denominator is accounting for that.
         # secder = delta slopes/delta t, delta t = ((t_j-t_(j-1))+(t_(j+1)-t_j))/2
-        #secder=[(slopes[j]-slopes[j-1])/((t[j+1]-t[j])/2+(t[j]-t[j-1])/2) for j in range(1, len(slopes)-1)]
+        # secder=[(slopes[j]-slopes[j-1])/((t[j+1]-t[j])/2+(t[j]-t[j-1])/2) for j in range(1, len(slopes)-1)]
         # after algebraic simplification:
         secder=[2*(slopes[j]-slopes[j-1])/(t[j+1]-t[j-1]) for j in range(1, len(slopes)-1)]
         
-        #abssecder=[abs((slopes[j]-slopes[j-1])/((t[j+1]-t[j])/2+(t[j]-t[j-1])/2)) for j in range (1, len(slopes)-1)]
+        # abssecder=[abs((slopes[j]-slopes[j-1])/((t[j+1]-t[j])/2+(t[j]-t[j-1])/2)) for j in range (1, len(slopes)-1)]
         # simplification:
 
         abssecder=np.abs(np.array(secder))
@@ -250,7 +244,7 @@ def featureCalculation(nfile,t,nf,err):
                 # which will overestimate the number of negative spikes since meanslope is inherently
                 # greater than meannslope.
                 num_nspikes+=1 #F26
-        """BOOKMARK 5/30/18"""
+        
         for sder in secder:
             if sder>=4*sdstds: # why doesn't this have a mean or median offset?
                 num_psdspikes+=1 #F27
@@ -280,13 +274,14 @@ def featureCalculation(nfile,t,nf,err):
         # Q: Is there a way to do this and take into account drastically different periodicity scales?
 
         naivemax,nmax_times = [],[]
-        naivemins = []
+        naivemins,nmin_times = [],[]
         for j in range(len(nf)):
             if nf[j] == max(nf[max(j-10,0):min(j+10,len(nf)-1)]):
                 naivemax.append(nf[j])
                 nmax_times.append(t[j])
             elif nf[j] == min(nf[max(j-10,0):min(j+10,len(nf)-1)]):
                 naivemins.append(nf[j])
+                nmin_times.append(t[j])
         len_nmax=len(naivemax) #F33
         len_nmin=len(naivemins) #F34    
         if len(naivemax)>2:
@@ -328,11 +323,11 @@ def featureCalculation(nfile,t,nf,err):
         oeratio = meanomin/meanemin #F42
 
         # amp here is actually amp_2 in revantese
-        # 2x the amplitude (peak-to-peak really), the 1st percentile will be negative, so it's really adding magnitudes
+        # 2x the amplitude (peak-to-peak really)
         amp = np.percentile(nf,99)-np.percentile(nf,1) #F43
         normamp = amp / np.mean(nf) #this should prob go, since flux is norm'd #F44
 
-        # ratio of points within 10% of middle to total number of points 
+        # ratio of points within one fifth of the amplitude to the median to total number of points 
         mbp = len([nf[j] for j in range(len(nf))\
                    if (nf[j] < (np.median(nf) + 0.1*amp)) \
                    & (nf[j] > (np.median(nf)-0.1*amp))]) / len(nf) #F45
@@ -349,7 +344,7 @@ def featureCalculation(nfile,t,nf,err):
         mid65 =f1782/f595 #F49
         mid80 =f1090/f595 #F50 
 
-        percentamp = max([(nf[j]-np.median(nf)) / np.median(nf) for j in range(len(nf))]) #F51
+        percentamp = max([abs(nf[j]-np.median(nf)) / np.median(nf) for j in range(len(nf))]) #F51
         magratio = (max(nf)-np.median(nf)) / amp #F52
 
         autocorrcoef = np.corrcoef(nf[:-1], nf[1:])[0][1] #F54
@@ -357,20 +352,22 @@ def featureCalculation(nfile,t,nf,err):
         sautocorrcoef = np.corrcoef(slopes[:-1], slopes[1:])[0][1] #F55
 
         #measures the slope before and after the maximums
-        flatness = [np.mean(slopes[max(0,j-6):min(max(0,j-1), len(slopes)-1):1])\
-                    - np.mean(slopes[max(0,j):min(j+4, len(slopes)-1):1])\
+        # reminder: 1 less slope than flux, slopes start after first flux
+        # slope[0] is between flux[0] and flux[1]
+        flatness = [np.mean(slopes[max(0,j-6):min(max(0,j-1), len(slopes)-1):1])\   # mean of slopes before max (will be positive)
+                    - np.mean(slopes[max(0,j):min(j+4, len(slopes)-1):1])\          # mean of slopes after max (will be negative)
                     for j in range(6,len(slopes)-6) \
-                    if nf[j] in naivemax]
+                    if t[j] in nmax_times]
 
         if len(flatness)==0: flatmean=0
         else: flatmean = np.nansum(flatness)/len(flatness) #F55
 
-        #measures the slope before and after the minimums
+        # measures the slope before and after the minimums
         # trying flatness w slopes and nf rather than "corr" vals, despite orig def in RN's program
-        tflatness = [-np.mean(slopes[max(0,j-6):min(max(j-1,0),len(slopes)-1):1])\
-                     + np.mean(slopes[j:min(j+4,len(slopes)-1):1])\
+        tflatness = [-np.mean(slopes[max(0,j-6):min(max(j-1,0),len(slopes)-1):1])\  # mean of slopes before min (will be negative)
+                     + np.mean(slopes[j:min(j+4,len(slopes)-1):1])\                 # mean of slopes after min (will be positive)
                      for j in range(6,len(slopes)-6)\
-                     if nf[j] in naivemins] 
+                     if t[j] in nmin_times] 
 
         # tflatness for mins, flatness for maxes
         if len(tflatness)==0: 
@@ -378,10 +375,12 @@ def featureCalculation(nfile,t,nf,err):
         else: 
             tflatmean = np.nansum(tflatness) / len(tflatness) #F56
 
+        # reminder: 1 less second derivative than slope (2 less than flux). secder starts after first slope.
+        # secder[0] is between slope[0] and slope[1], centered at flux[1]
         roundness = [np.mean(secder[max(0,j-6):j:1])\
                       +np.mean(secder[j:min(j+6,len(secder)-1):1])\
                       for j in range(6,len(secder)-6)\
-                      if nf[j] in naivemax]
+                      if t[j] in nmax_times]
 
         if len(roundness)==0: 
             roundmean=0
@@ -391,7 +390,7 @@ def featureCalculation(nfile,t,nf,err):
         troundness = [np.mean(secder[max(0,j-6):j])\
                       +np.mean(secder[j:min(j+6,len(secder)-1)])\
                       for j in range(6,len(secder)-6)\
-                      if nf[j] in naivemins]
+                      if t[j] in nmin_times]
 
         if len(troundness)==0:
             troundmean=0

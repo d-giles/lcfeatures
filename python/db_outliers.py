@@ -51,7 +51,9 @@ def eps_est_recursive(data):
     return dbEps,neighbors
 
 def eps_est(data,n=4,verbose=True):
-    
+    """
+    Minimum data size is 1000
+    """
     # distance array containing all distances
     if verbose:print("Calculating nearest neighbor distances...")
     nbrs = NearestNeighbors(n_neighbors=int(max(n+1,100)), algorithm='ball_tree',n_jobs=-1).fit(data)
