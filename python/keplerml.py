@@ -354,8 +354,10 @@ def featureCalculation(nfile,t,nf,err):
         #measures the slope before and after the maximums
         # reminder: 1 less slope than flux, slopes start after first flux
         # slope[0] is between flux[0] and flux[1]
-        flatness = [np.mean(slopes[max(0,j-6):min(max(0,j-1), len(slopes)-1):1])\   # mean of slopes before max (will be positive)
-                    - np.mean(slopes[max(0,j):min(j+4, len(slopes)-1):1])\          # mean of slopes after max (will be negative)
+            # mean of slopes before max will be positive
+            # mean of slopes after max will be negative
+        flatness = [np.mean(slopes[max(0,j-6):min(max(0,j-1), len(slopes)-1):1])\
+                    - np.mean(slopes[max(0,j):min(j+4, len(slopes)-1):1])\
                     for j in range(6,len(slopes)-6) \
                     if t[j] in nmax_times]
 
@@ -364,8 +366,10 @@ def featureCalculation(nfile,t,nf,err):
 
         # measures the slope before and after the minimums
         # trying flatness w slopes and nf rather than "corr" vals, despite orig def in RN's program
-        tflatness = [-np.mean(slopes[max(0,j-6):min(max(j-1,0),len(slopes)-1):1])\  # mean of slopes before min (will be negative)
-                     + np.mean(slopes[j:min(j+4,len(slopes)-1):1])\                 # mean of slopes after min (will be positive)
+          # mean of slopes before min will be negative
+          # mean of slopes after min will be positive
+        tflatness = [-np.mean(slopes[max(0,j-6):min(max(j-1,0),len(slopes)-1):1])\
+                     + np.mean(slopes[j:min(j+4,len(slopes)-1):1])\
                      for j in range(6,len(slopes)-6)\
                      if t[j] in nmin_times] 
 
