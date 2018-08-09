@@ -109,7 +109,8 @@ def dbscan_w_outliers(data,min_n=4,check_tabby=False,verbose=True):
     nbrs = NearestNeighbors(n_neighbors=min_n+1, algorithm='ball_tree',n_jobs=-1).fit(data)
     distances, indices = nbrs.kneighbors(data)
     del nbrs
-    distArr = distances[:,min_n]
+    distArr = distances[:,min_n]    #this should be calculated before eps_est and fed in, it's
+                                    # computationally expensive and should only be done once
 
     d = {True:-1,False:0}
     clusterLabels = np.array([d[pt>dbEps] for pt in distArr])
