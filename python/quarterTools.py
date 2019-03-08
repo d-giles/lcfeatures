@@ -3,7 +3,10 @@ from matplotlib import colors
 import matplotlib.cm as cmx
 import matplotlib.gridspec as gridspec
 
+from IPython.display import display
+
 import numpy as np
+np.set_printoptions(threshold=np.nan)
 import pandas as pd
 
 import seaborn as sns
@@ -284,3 +287,173 @@ def four_Q_lc(kid,Qa,Qb,Qc,Qd):
     ax1.legend(loc='upper center',bbox_to_anchor=(0.5,1.05),ncol=3, fontsize=18)
     
     fig.tight_layout()
+
+    
+catalogs = {'koi_full':['list_koi_full.txt',',',2],
+            'koi_confirmed':['list_koi_confirmed.txt',',',2],
+            'koi_candidate':['list_koi_candidate.txt',',',2],
+            'koi_fp':['list_koi_fp.txt',',',2],
+            'EB':['list_EBs.csv',',',0],
+            'HB':['list_kepler_heartbeats.txt',None,37],
+            'flares':['kepler_solar_flares.txt',None,22],
+            'no_signal':['list_kepler_nosig.txt',None,28],
+            'periodic':['list_kepler_MSperiods.txt',None,32]}
+
+class weirdnessProfile(object):
+    def __init__(self,
+                 KIC='8462852',
+                 Qs=['Q4','Q8','Q11','Q16'],
+                 analysis_path='/home/dgiles/Documents/KeplerLCs/output/Analysis/',
+                 fitsDirPath='/home/dgiles/Documents/KeplerLCs/fitsFiles/',
+                 verbose=True):
+        """
+        This object contains summary information about anomaly detection run on KIC lightcurves.
+        Provide the KIC and the quarters for which analysis has been run, and this will create 
+        a weirdness dossier, or profile for that KIC.
+        Quarters must have been analyzed with an _analysis.csv file produced containing scores
+        and 2 pca components for each KIC. 
+        At the time of writing (3/8/19), only quarters 4, 8, 11, and 16 have been analyzed.
+        
+        This profiler cross references a number of catalogs whose members are stored in various
+        formats. The 'catalogs' dictionary contains information on how to extract these filelists
+        As a matter of convenience, copies of these analysis files have been created for each 
+        catalog for each quarter rather than resample for each catalog.
+        This will likely become unweildy as more catalogs and quarters are added (it already is),
+        and methods will be updated, potentially impacting peformance.
+        """
+        if KIC[:3]=='KIC':
+            self.KIC = str(int(KIC[3:]))
+        elif KIC[:4]=='kplr':
+            self.KIC = str(int(KIC[4:]))
+        else:
+            try:
+                self.KIC = str(int(KIC))
+            except:
+                print("ID not recognized. Try without a prefix?")
+        self.Qs = Qs
+        self.analysis_path = analysis_path
+        self.fitsDirPath = fitsDirPath
+        self.sampler = lambda df: df[df.index.str.contains(self.KIC)]
+        self.full_analysis_data = {Q:pd.read_csv(self.analysis_path+Q+'_analysis.csv',index_col=0) for Q in self.Qs}
+        self.analysis_data = {Q:self.sampler(self.full_analysis_data[Q]) for Q in self.Qs}
+        self.scores = self.scoreSummary()
+        self.ranks = self.rankSummary()
+        self.catalogs,self.ctlg_sampler = self.catalogCheck()
+        self.ctlg_summary = self.catalogCompare()
+        if verbose:self.printSummary()
+        
+    def scoreSummary(self):
+        scores = pd.DataFrame()
+        for Q in self.Qs:
+            dftmp = self.analysis_data[Q].loc[:,['dist_score','PCA90_score','PCA95_score','PCA99_score']]
+            dftmp.index = [Q]
+            scores = scores.append(dftmp)
+        return scores
+    
+    def rankSummary(self):
+        # Returns the percentile of the object in relation to the rest of the quarter's data, generally more illuminating than the score
+        full_ranks={}
+        for Q in self.Qs:
+            full_ranks[Q] = self.full_analysis_data[Q].loc[:,[]]
+            full_ranks[Q]['Full'] = self.full_analysis_data[Q].dist_score.rank(ascending=False)
+            full_ranks[Q]['Full_pctl'] = self.full_analysis_data[Q].dist_score.rank(ascending=True)/len(self.full_analysis_data[Q])*100
+            full_ranks[Q]['PCA90'] = self.full_analysis_data[Q].PCA90_score.rank(ascending=False)
+            full_ranks[Q]['PCA90_pctl'] = self.full_analysis_data[Q].PCA90_score.rank(ascending=True)/len(self.full_analysis_data[Q])*100
+            full_ranks[Q]['PCA95'] = self.full_analysis_data[Q].PCA95_score.rank(ascending=False)
+            full_ranks[Q]['PCA95_pctl'] = self.full_analysis_data[Q].PCA95_score.rank(ascending=True)/len(self.full_analysis_data[Q])*100
+            full_ranks[Q]['PCA99'] = self.full_analysis_data[Q].PCA99_score.rank(ascending=False)
+            full_ranks[Q]['PCA99_pctl'] = self.full_analysis_data[Q].PCA99_score.rank(ascending=True)/len(self.full_analysis_data[Q])*100
+        self.full_ranks = full_ranks
+        
+        ranks = pd.DataFrame()
+        for Q in self.Qs:
+            dftmp = self.sampler(full_ranks[Q])
+            dftmp.index = [Q]
+            ranks = ranks.append(dftmp)
+            
+        return ranks
+    
+    def plotlcs(self):
+        for Q in self.Qs:
+            plot_lc(self.analysis_data[Q].index[0],self.fitsDirPath+Q+'fitsfiles/')
+        return
+    
+    def pcaPlots(self):
+        # Plots each quarter's data into the top 2 principle components from a PCA reduction
+        for Q in self.Qs:
+            x = self.full_analysis_data[Q].pca_x
+            y = self.full_analysis_data[Q].pca_y
+            fig = plt.figure(figsize=(4,4))
+            ax = fig.add_subplot(111)
+            ax.scatter(x,y)
+            ax.scatter(self.analysis_data[Q].pca_x,self.analysis_data[Q].pca_y)
+            
+    def catalogCheck(self):
+        # Checks the available catalogs to see if the object is contained in them
+        in_catalogs = []
+        ctlg_sampler = {}
+        # Catalogs of individual classes are looped through here
+        for ctlg in catalogs:
+            import_ref = catalogs[ctlg]
+            ctlg_list = np.genfromtxt(import_ref[0],delimiter=import_ref[1],skip_header=import_ref[2],usecols=(0),dtype=str)
+            if self.KIC in ctlg_list:
+                in_catalogs.append(ctlg)
+                ctlg_sampler[ctlg] = make_sampler(ctlg_list)
+                
+        # Debosscher and SIMBAD have a bunch of different classifications, each need parsed out
+        lines = np.genfromtxt('kepler_variable_classes.txt',dtype=str,skip_header=50)
+        Debosscher_full_df = pd.DataFrame(data=lines[:,4],columns=["Class"],index=lines[:,0])
+        if Debosscher_full_df.index.str.contains(self.KIC).any():
+            deb_class = Debosscher_full_df.loc[self.KIC,'Class']
+            ctlg_sampler['Deb_Class_%s'%deb_class]=make_sampler(Debosscher_full_df[Debosscher_full_df.Class==deb_class].index)
+            in_catalogs.append('Deb_Class_%s'%deb_class)
+            
+        lines = np.genfromtxt('simbad.csv',delimiter=';',skip_header=7,dtype=str)[:,1:]
+        simbad_full_df = pd.DataFrame(data=lines[:,1],columns=["Class"],index=lines[:,0])
+        if simbad_full_df.index.str.contains(self.KIC).any():
+            sim_class = simbad_full_df.loc[simbad_full_df.index.str.contains(self.KIC),'Class'][0]
+            ctlg_sampler['SIMBAD_Class_%s'%sim_class]=make_sampler(simbad_full_df[simbad_full_df.Class == sim_class].index)
+            in_catalogs.append('SIMBAD_Class_%s'%sim_class)
+            
+        return in_catalogs,ctlg_sampler
+    
+    def catalogCompare(self):
+        # Produces summary dataframes for each catalog the object belongs to, 
+        # the summary includes the mean score and the standard deviation of the scores of the catalog
+        catalog_data_summary = {}
+        for ctlg in self.catalogs:
+            catalog_data_summary[ctlg] = pd.DataFrame()
+            for Q in self.Qs:
+                path = self.analysis_path+Q+'_'+ctlg+'_analysis.csv'
+                ctlg_data = pd.read_csv(path,index_col=0)
+                tmp_df = pd.DataFrame({'dist_score':ctlg_data.dist_score.mean(),
+                                       'dist_std':ctlg_data.dist_score.std(),
+                                       'PCA90_score':ctlg_data.PCA90_score.mean(),
+                                       'PCA90_std':ctlg_data.PCA90_score.std(),
+                                       'PCA95_score':ctlg_data.PCA95_score.mean(),
+                                       'PCA95_std':ctlg_data.PCA95_score.std(),
+                                       'PCA99_score':ctlg_data.PCA99_score.mean(),
+                                       'PCA99_std':ctlg_data.PCA99_score.std()},
+                                      index=[Q])
+                catalog_data_summary[ctlg] = catalog_data_summary[ctlg].append(tmp_df)
+        return catalog_data_summary
+    def ctlgCmpViz(self,ctlg,scoreType='dist'):
+        # Plots the score of the object against the score of the catalog with errorbars
+        qs = [int(i[1:]) for i in self.scores.index]
+        plt.scatter(qs,self.scores.loc[:,scoreType+'_score'])
+        #plt.scatter(qs,self.ctlg_summary[ctlg].loc[:,scoreType+'_score'])
+        plt.errorbar(qs,
+                     self.ctlg_summary[ctlg].loc[:,scoreType+'_score'],
+                     self.ctlg_summary[ctlg].loc[:,scoreType+'_std'])
+        
+    def printSummary(self):
+        # Prints out the scores for the object in each given quarter, the catalogs it's contained in, 
+        # and any significant score deviations from its identified catalogs
+        print("Scores of KIC {}".format(self.KIC))
+        display(self.scores)
+        display(self.ranks)
+        print("KIC{} contained in these catalogs: {}".format(self.KIC,self.ctlg_summary.keys()))
+        for k in self.ctlg_summary.keys():
+            for Q in self.Qs:
+                if abs(self.ctlg_summary[k].loc[Q,'dist_score']-self.scores.loc[Q,'dist_score'])>self.ctlg_summary[k].loc[Q,'dist_std']:
+                    print("Significant deviation (>1 sigma) from {} catalog in Quarter {}".format(k,Q))
