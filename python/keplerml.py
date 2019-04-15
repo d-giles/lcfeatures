@@ -16,21 +16,28 @@ def fl_files(fl):
     """
     return [line.strip() for line in open(fl)]
 
-def fl_files_w_path(fl,fl_as_array=False,fitsDir='./fitsFiles/'):
+def fl_files_w_path(fl,fitsDir='./fitsFiles/',fl_as_array=False):
     """
     Returns an array with the files to be processed
     in the given filelist with the given path.
+    
+    If filelist given as array, it is assumed that the entire array needs processed. Whereas if a filelist
+    is given as a txt file, the following looks for a completed filelist as well to avoid reprocessing.
     """
     if fl_as_array:
-        files = fl
-        files_copy = files
-        files = np.chararray(len(files_copy),itemsize=len(files_copy[0]))
-        files[:] = files_copy
+        files = np.char.array(fl)
+        
     else:
         files = fl_files(fl)
         fl_c = fl.replace('.txt',"")+"_completed.txt"
         if os.path.isfile(fl_c):
-            # Checks for a completed filelist (fl_complete.txt) so as not to reprocess any files.
+            """             
+            While it seems roundabout to convert to empty pandas dataframes, it's about 20% faster
+            than using numpy arrays as follows.
+
+            unique,counts = np.unique(np.concatenate([files,completed]),return_counts=True)
+            files = unique[counts==1]
+            """
             completed = fl_files(fl_c)  
 
             dff = pd.DataFrame(index = files)
@@ -38,17 +45,10 @@ def fl_files_w_path(fl,fl_as_array=False,fitsDir='./fitsFiles/'):
             df = dff.append(dfc)
             df = df[~df.index.duplicated(keep=False)]
             files = np.char.array(df.index) # allows appending the fits directory later
-            """
-            While it seems roundabout to convert to empty pandas dataframes, it's about 20% faster
-            than using numpy arrays as follows.
 
-            unique,counts = np.unique(np.concatenate([files,completed]),return_counts=True)
-            files = unique[counts==1]
-            """
         else:
-            files = np.char.array(files) # allows appending the fits directory later
-            # Creates a completed filelist
-            fcreate = open(fl_c,'a')
+            files = np.char.array(files) # char.array allows appending the fits directory later
+            fcreate = open(fl_c,'a')    # Creates a filelist to keep track of processed files.
             fcreate.close()
         
     return fitsDir+files
@@ -72,28 +72,33 @@ def read_kepler_curve(file):
 
     return t, nf, err
 
-def clean_up(fl,in_file='tmp_data.csv'):
+def clean_up(fl):
     """
     Removes files already processed from files array and
     removes the original filelist if all files have been processed.
     """
     
     files = fl_files(fl)
-    ### Will need updated to match updated data saving method once csvs are replaced.
-    df = pd.read_csv(in_file,index_col=0)
+    df = pd.DataFrame()
+    with open(tmpfile,'rb') as fr:
+        try:
+            while True:
+                df = df.append(pickle.load(fr))
+        except EOFError:
+            pass
+
     """
     Dropping files that have already been processed from the files 
     """
     # Create a copy of df to manipulate
-    dfc = df
-    # create an empty dataframe with all the file names as indices
+    dfc = df.copy()
+    # create an empty dataframe with all the file names as indices (not just completed)
     dff = pd.DataFrame(index = files)
     dfc = dfc.append(dff)
     files = np.array(dfc[~dfc.index.duplicated(keep=False)].index)
     
-    for lc in df.index:
-        with open(fl.replace('.txt',"")+"_completed.txt",'a') as completed:
-            completed.write(lc)
+    with open(fl.replace('.txt',"")+"_completed.txt",'a') as completed:
+        completed.writelines(df.index)
                 
     if files==[]:
         print("All files from original filelist processed, deleting original filelist.")
@@ -101,19 +106,20 @@ def clean_up(fl,in_file='tmp_data.csv'):
 
     return files
 
-def save_output(out_file,in_file='tmp_data.p'):
+def save_output(out_file):
     """
-    Reads in the finished data file (tmp_data.csv by default), sorts it, and saves it to the
+    Reads in the finished data file (tmp_data.p by default), sorts it, and saves it to the
     specified output csv. Effectively just sorting a csv and renaming it.
     """
-    data = []
-    with open(in_file, 'rb') as fr:
+    df = pd.DataFrame()
+    with open(tmpfile, 'rb') as fr:
         try:
             while True:
-                data.append(pickle.load(fr))
+                df = df.append(pickle.load(fr))
         except EOFError:
             pass
-    pickle.dump(data,open(out_file,'ab'))
+    #df = df.sort_index()
+    pickle.dump(df,open(out_file,'wb'))
     
     ### Deprecated by pickle dump
     """
@@ -122,13 +128,12 @@ def save_output(out_file,in_file='tmp_data.p'):
     with open(out_file,'a') as of:
         df.to_csv(of)
     """
-    os.remove(in_file)
+    os.remove(tmpfile)
     
     return
 
 @njit
 def flat_func(slopes,inds):
-    assert (min(inds)>5)&(max(inds)<len(slopes)-5), "IndexError: calculation needs 5 slopes on either side of each calculated point."
     flat1 = np.zeros(len(inds))
     for i,j in enumerate(inds):
         flat1[i] = np.mean(slopes[j-6:j-1])-np.mean(slopes[j:j+5])
@@ -136,7 +141,6 @@ def flat_func(slopes,inds):
 
 @njit
 def tflat_func(slopes,inds):
-    assert (min(inds)>5)&(max(inds)<len(slopes)-5), "IndexError: calculation needs 5 slopes on either side of each calculated point."
     tflat1 = np.zeros(len(inds))
     for i,j in enumerate(inds):
         tflat1[i] = -np.mean(slopes[j-6:j-1])+np.mean(slopes[j:j+5])
@@ -144,7 +148,6 @@ def tflat_func(slopes,inds):
 
 @njit
 def roundness_func(secder,inds):
-    assert (min(inds)>5)&(max(inds)<len(secder)-5), "IndexError: calculation needs 5 second derivatives on either side of each calculated point."
     roundness1 = np.zeros(len(inds))
     for i,j in enumerate(inds):
         roundness1[i] = np.mean(secder[j-6:j+6])*2
@@ -427,8 +430,7 @@ def featureCalculation(nfile,t,nf,err):
         elif tflatmean==0: flatrat=10
         else: flatrat = flatmean / tflatmean #F60
         
-        ndata = [nfile[nfile.find('kplr'):],\
-                 longtermtrend, meanmedrat, skews, varss, coeffvar, stds, \
+        ndata = [longtermtrend, meanmedrat, skews, varss, coeffvar, stds, \
                  numoutliers, numnegoutliers, numposoutliers, numout1s, kurt, mad, \
                  maxslope, minslope, meanpslope, meannslope, g_asymm, rough_g_asymm, \
                  diff_asymm, skewslope, varabsslope, varslope, meanabsslope, absmeansecder, \
@@ -438,12 +440,7 @@ def featureCalculation(nfile,t,nf,err):
                  amp, normamp, mbp, mid20, mid35, mid50, \
                  mid65, mid80, percentamp, magratio, sautocorrcoef, autocorrcoef, \
                  flatmean, tflatmean, roundmean, troundmean, roundrat, flatrat]
-        
-        with open('tmp_data.p','ab') as f:
-            pickle.dump(ndata,f)
-    
-        ### Staged for deprecation, will dump to a pickle for more stable data storage.
-        """
+            
         fts = ["longtermtrend", "meanmedrat", "skews", "varss", "coeffvar", "stds", \
                "numoutliers", "numnegoutliers", "numposoutliers", "numout1s", "kurt", "mad", \
                "maxslope", "minslope", "meanpslope", "meannslope", "g_asymm", "rough_g_asymm", \
@@ -456,6 +453,10 @@ def featureCalculation(nfile,t,nf,err):
                "flatmean", "tflatmean", "roundmean", "troundmean", "roundrat", "flatrat"]
 
         df = pd.DataFrame([ndata],index=[nfile[nfile.find('kplr'):]],columns=fts)
+        with open(tmpfile,'ab') as f:
+            pickle.dump(df,f)
+        """
+        Deprecated
         with open('tmp_data.csv','a') as f:
             df.to_csv(f,header=False)
         """
@@ -487,17 +488,20 @@ def features_from_fits(nfile):
     else:
         return features
     
-def features_from_filelist(fl,fitDir,of,fl_as_array=False, numCpus = cpu_count(), verbose=False):
+def features_from_filelist(fl,fitDir,of,fl_as_array=False, numCpus = cpu_count(), verbose=False, tmp_file='tmp_data.p'):
     """
     This method calculates the features of the given filelist from the fits files located in fitsDir.
-    All output is saved to a temporary csv file called tmp_data.csv.
-    Run save_output(output file) and clean_up(filelist, fits file directory) to save to the desired location,
-    and to clean up the filelist and tmp_data.csv. 
+    All output is saved to a pickle file called tmp_data.p.
+        Run clean_up(filelist, fits/file/directory) and save_output('output/file/path') 
+        to clean up the filelist (makes a completed filelist) and to save to the desired location. 
+        Note: save_output() replaces tmp_data.p 
     
     Returns pandas dataframe of output.
     """
     global fitsDir
     fitsDir = fitDir
+    global tmpfile
+    tmpfile = tmp_file
     ### REPLACED WITH PICKLE DUMP
     """
     if not os.path.isfile('tmp_data.csv'):
@@ -518,15 +522,15 @@ def features_from_filelist(fl,fitDir,of,fl_as_array=False, numCpus = cpu_count()
     # files with path.
     if verbose:
         if not fl_as_array:print("Reading %s..."%fl)
-    files = fl_files_w_path(fl,fl_as_array,fitsDir)
-    useCpus = min([len(files),max(numCpus-1,0)])
+    files = fl_files_w_path(fl,fitsDir,fl_as_array)
+    useCpus = min([len(files),cpu_count()-1,max(numCpus,1)])
     if verbose:
         print("Processing %s files..."%len(files))
         print("Using %s cpus to calculate features..."%useCpus)
                                          
-    p = Pool(numCpus)
-    # Method saves to tmp_data.csv file to save on system memory
-    p.map(features_from_fits,files)
+    p = Pool(useCpus)
+    # Method saves to tmp_data.p file after processing each lightcurve as a failsafe.
+    p.map_async(features_from_fits,files)
     p.close()
     p.join()
     
@@ -543,7 +547,7 @@ def features_from_filelist(fl,fitDir,of,fl_as_array=False, numCpus = cpu_count()
     if __name__=="__main__":
         return
     else:
-        return pd.read_csv(of)
+        return pickle.load(open(of,'rb'))
     
 if __name__=="__main__":
     """
