@@ -1,20 +1,23 @@
-import numpy as np 
-import pandas as pd
-np.set_printoptions(threshold='nan')
-from scipy import stats
-from multiprocessing import Pool,cpu_count
 import os
 import sys
+import numpy as np 
+import pandas as pd
+np.set_printoptions(threshold=sys.maxsize)
+from scipy import stats
+from multiprocessing import Pool,cpu_count
 from datetime import datetime
 import pyfits
 import pickle
 from numba import njit
+from datetime import datetime
 
 def fl_files(fl):
     """
     Returns an array with the files in the given filelist
     """
-    return [line.strip() for line in open(fl)]
+    with open(fl,'r') as file:
+        files = file.readlines()
+    return files
 
 def fl_files_w_path(fl,fitsDir='./fitsFiles/',fl_as_array=False):
     """
@@ -28,7 +31,8 @@ def fl_files_w_path(fl,fitsDir='./fitsFiles/',fl_as_array=False):
         files = np.char.array(fl)
         
     else:
-        files = fl_files(fl)
+        with open(fl,'r') as file:
+            files = file.readlines()
         fl_c = fl.replace('.txt',"")+"_completed.txt"
         if os.path.isfile(fl_c):
             """             
@@ -44,7 +48,7 @@ def fl_files_w_path(fl,fitsDir='./fitsFiles/',fl_as_array=False):
             dfc = pd.DataFrame(index = completed)
             df = dff.append(dfc)
             df = df[~df.index.duplicated(keep=False)]
-            files = np.char.array(df.index) # allows appending the fits directory later
+            files = np.char.array(files) # allows appending the fits directory later
 
         else:
             files = np.char.array(files) # char.array allows appending the fits directory later
@@ -72,21 +76,38 @@ def read_kepler_curve(file):
 
     return t, nf, err
 
-def clean_up(fl):
+def recover(fl,temp_file,fl_as_array=False):
     """
-    Removes files already processed from files array and
-    removes the original filelist if all files have been processed.
-    """
+    Purpose:
+        In the event that processing lightcurves fails in the middle, 
+        this will read in the failsafe tmp file, evaluate which files were successfully processed, 
+        and modify the files list to be processed.
+
+        Removes files already processed from files array and
+        removes the original filelist if all files have been processed.
+
+        Each lightcurve appends the pickle file, so this could take awhile, but it's probably (no basis for this statement) faster than reprocessing.
+    Args:
+        fl (str,list,np.array) - filelist for processing. If a string, should be the path to the filelist containing each file name on a seperate line.
+        temp_file - filepath to the temp file generated as a failsafe
+        fl_as_array (boolean) - true if the filelist is given as a list or numpy array 
+    Returns:
+        files - an array of files remaining to be processed
+        df - a dataframe of successfully processed files
+        """
+    if fl_as_array:files = fl
+    else: 
+        with open(fl,'r') as file:
+            files = file.readlines()
     
-    files = fl_files(fl)
     df = pd.DataFrame()
-    with open(tmpfile,'rb') as fr:
+    with open(temp_file,'rb') as fr:
         try:
             while True:
                 df = df.append(pickle.load(fr))
         except EOFError:
             pass
-
+    pickle.dump(df,open(temp_file,'wb')) # resave the temp file as a singular entry for easier processing later if need be.
     """
     Dropping files that have already been processed from the files 
     """
@@ -99,38 +120,8 @@ def clean_up(fl):
     
     with open(fl.replace('.txt',"")+"_completed.txt",'a') as completed:
         completed.writelines(df.index)
-                
-    if files==[]:
-        print("All files from original filelist processed, deleting original filelist.")
-        os.remove(fl)
 
-    return files
-
-def save_output(out_file):
-    """
-    Reads in the finished data file (tmp_data.p by default), sorts it, and saves it to the
-    specified output csv. Effectively just sorting a csv and renaming it.
-    """
-    df = pd.DataFrame()
-    with open(tmpfile, 'rb') as fr:
-        try:
-            while True:
-                df = df.append(pickle.load(fr))
-        except EOFError:
-            pass
-    #df = df.sort_index()
-    pickle.dump(df,open(out_file,'wb'))
-    
-    ### Deprecated by pickle dump
-    """
-    df = pd.read_csv(in_file,index_col=0)
-    df=df.sort_index()
-    with open(out_file,'a') as of:
-        df.to_csv(of)
-    """
-    os.remove(tmpfile)
-    
-    return
+    return files, df
 
 @njit
 def easy_feats(t,nf,err):
@@ -223,8 +214,8 @@ def easy_feats(t,nf,err):
     # which will overestimate the number of negative spikes since meanslope is inherently
     # greater than meannslope.
 
-    num_psdspikes = len(secder[secder>=4*sdstds]) #F27
-    num_nsdspikes = len(secder[secder<=4*sdstds]) #F28
+    num_psdspikes = len(secder[secder>=meanstds+4*sdstds]) #F27
+    num_nsdspikes = len(secder[secder<=meanstds-4*sdstds]) #F28
     if nslopestds==0:
         stdratio=10
     else:
@@ -233,10 +224,6 @@ def easy_feats(t,nf,err):
     # The ratio of postive slopes with a following postive slope to the total number of points.
     pairs = np.where((slopes[1:]>0)&(slopes[:-1]>0))[0] # where positive slopes are followed by another positive slope
     pstrend=len(pairs)/len(slopes) #F30
-
-    # Checks if the flux crosses the 'zero' line.
-    zcrossind = np.where(corrnf[:-1]*corrnf[1:]<0)
-    num_zcross = len(zcrossind) #F31
 
     plusminus = np.where((slopes[1:]<0)&(slopes[:-1]>0))[0]
     num_pm = len(plusminus)
@@ -251,7 +238,7 @@ def easy_feats(t,nf,err):
         if j-10<0:
             jmin=0
         else:
-            jmin=j+10
+            jmin=j-10
         if j+10>len(nf)-1:
             jmax=len(nf-1)
         else:
@@ -284,7 +271,7 @@ def easy_feats(t,nf,err):
     len_nmax=len(naivemax) #F33
     len_nmin=len(naivemins) #F34
 
-    ppslopes = (naivemax[1:]-naivemax[:-1])/(nmax_times[1:]-nmax_times[:-1])
+    ppslopes = np.abs(naivemax[1:]-naivemax[:-1])/(nmax_times[1:]-nmax_times[:-1])
 
     if len(ppslopes)==0:
         ptpslopes = 0
@@ -335,7 +322,7 @@ def easy_feats(t,nf,err):
     # reminder: 1 less second derivative than slope (2 less than flux). secder starts after first slope.
     # secder[0] is between slope[0] and slope[1], centered at flux[1]
 
-    nmax_inds_subset = nmax_inds[(nmax_inds>5)&(nmax_inds<len(secder-5))]
+    nmax_inds_subset = nmax_inds[(nmax_inds>5)&(nmax_inds<len(secder)-5)]
     
     roundness = np.zeros(len(nmax_inds_subset))
     for i,j in enumerate(nmax_inds_subset):
@@ -344,7 +331,7 @@ def easy_feats(t,nf,err):
     if len(roundness)==0: roundmean=0
     else: roundmean = np.mean(roundness) #F57
 
-    nmin_inds_subset = nmin_inds[(nmin_inds>5)&(nmin_inds<len(secder-5))]
+    nmin_inds_subset = nmin_inds[(nmin_inds>5)&(nmin_inds<len(secder)-5)]
     troundness = np.zeros(len(nmin_inds_subset))
     for i,j in enumerate(nmin_inds_subset):
         troundness[i] = np.mean(secder[j-6:j+6])*2
@@ -353,24 +340,30 @@ def easy_feats(t,nf,err):
     else: troundmean = np.mean(troundness) #F58
 
     if troundmean==0 and roundmean==0: roundrat=1
-    elif troundmean==0: roundrat=10
+    elif troundmean==0 and roundmean>0: roundrat=123456
+    elif troundmean==0 and roundmean<0: roundrat=-123456
     else: roundrat = roundmean / troundmean #F59
 
     if flatmean==0 and tflatmean==0: flatrat=1
-    elif tflatmean==0: flatrat=10
+    elif tflatmean==0: flatrat=-10 #Flatness ratio is (almost) inherently positive has an average value of 1. If there are no minima, a flatness ratio of -10 is assigned. See reasoning for g_asymm.
     else: flatrat = flatmean / tflatmean #F60"""
         
-    return meanmedrat, skews, varss, coeffvar, stds, numoutliers, numnegoutliers, numposoutliers, numout1s, mad, meanpslope, meannslope, g_asymm, rough_g_asymm, diff_asymm, varabsslope, varslope, meanabsslope, absmeansecder, num_pspikes, num_nspikes, num_psdspikes, num_nsdspikes,stdratio, pstrend, num_zcross, num_pm, len_nmax, len_nmin, ptpslopes, oeratio, flatmean, tflatmean, roundmean, troundmean, roundrat, flatrat
+    return meanmedrat, varss, coeffvar, stds, numoutliers, numnegoutliers, numposoutliers, numout1s, mad, meanpslope, meannslope, g_asymm, rough_g_asymm, diff_asymm, varabsslope, varslope, meanabsslope, absmeansecder, num_pspikes, num_nspikes, num_psdspikes, num_nsdspikes,stdratio, pstrend, num_pm, len_nmax, len_nmin, ptpslopes, oeratio, flatmean, tflatmean, roundmean, troundmean, roundrat, flatrat, naivemax, maxdiff
 
-def fancy_feats(t,nf,err):
+def fancy_feats(t,nf,err,naivemax,maxdiff):
+    nf_mean = np.mean(nf)
+    nf_med = np.median(nf)
+    
     # fancy meaning I can't throw these under a jit decorator.
     longtermtrend = np.polyfit(t, nf, 1)[0] # Feature 1 (Abbr. F1) overall slope
     yoff = np.polyfit(t, nf, 1)[1] # Not a feature, y-intercept of linear fit
     skews = stats.skew(nf) # F3
     corrnf = nf - longtermtrend*t - yoff #this removes any linear trend of lc so you can look at just troughs
     
-    kurt = stats.kurtosis(nf)
+    kurt = stats.kurtosis(nf) # F11
     
+    slopes = (nf[1:]-nf[:-1])/(t[1:]-t[:-1])
+
     # by looking at where the 99th percentile is instead of just the largest number,
     # I think it avoids the extremes which might not be relevant (might be unreliable data)
     # Is the miniumum slope the most negative one, or the flattest one? Answer: Most negative
@@ -380,7 +373,11 @@ def fancy_feats(t,nf,err):
     #corrslopes (corrected slopes) removes the longterm linear trend (if any) and then looks at the slope
     corrslopes = (corrnf[1:]-corrnf[:-1])/(t[1:]-t[:-1])
     skewslope = stats.skew(slopes) #F20
-
+    
+    # Checks if the flux crosses the 'zero' line.
+    zcrossind = np.where(corrnf[:-1]*corrnf[1:]<0)[0]
+    num_zcross = len(zcrossind) #F31
+    
     if len(naivemax)>2:
         mautocorrcoef = np.corrcoef(naivemax[:-1], naivemax[1:])[0][1] #F35
     else:
@@ -429,11 +426,28 @@ def fancy_feats(t,nf,err):
 
     magratio = (max(nf)-nf_med) / amp #F52
     
-    return longtermtrend, kurt, maxslope, minslope, skewslope, mautocorrcoef,periodicity,periodicityr,naiveperiod,maxvars,maxvarsr,amp,normamp,mbp,mid20,mid35,mid50,mid65,mid80,percentamp,magratio,sautocorrcoef,autocorrcoef
+    return longtermtrend, skews, kurt, maxslope, minslope, skewslope, num_zcross, mautocorrcoef, periodicity, periodicityr, naiveperiod, maxvars, maxvarsr, amp, normamp, mbp, mid20, mid35, mid50, mid65, mid80, percentamp, magratio, sautocorrcoef, autocorrcoef
     
 def feats(t,nf,err):
-    meanmedrat, skews, varss, coeffvar, stds, numoutliers, numnegoutliers, numposoutliers, numout1s, mad, meanpslope, meannslope, g_asymm, rough_g_asymm, diff_asymm, varabsslope, varslope, meanabsslope, absmeansecder, num_pspikes, num_nspikes, num_psdspikes, num_nsdspikes,stdratio, pstrend, num_zcross, num_pm, len_nmax, len_nmin, ptpslopes, oeratio, flatmean, tflatmean, roundmean, troundmean, roundrat, flatrat=easy_feats(t,nf,err)
-    longtermtrend, kurt, maxslope, minslope, skewslope, mautocorrcoef,periodicity,periodicityr,naiveperiod,maxvars,maxvarsr,amp,normamp,mbp,mid20,mid35,mid50,mid65,mid80,percentamp,magratio,sautocorrcoef,autocorrcoef=fancy_feats(t,nf,err)
+    """
+    Purpose:
+        Calculates the features determined to be useful for machine learning applications to photometric data.
+        Splits the computation into 2 categories, those which can be easily decorated with the njit decorator, and those which can be otherwise optimized.
+        
+    Args:
+        t (np.array, dtype np.float64) - time
+        nf (np.array, dtype np.float32) - normalized flux
+        err (np.array, dtype np.float32) - normalized error
+    
+    returns:
+        ndata (list, dtype varied) - the features in order as specified in the feature key (external to this code)
+    """
+    # features that were jit-able
+    meanmedrat, varss, coeffvar, stds, numoutliers, numnegoutliers, numposoutliers, numout1s, mad, meanpslope, meannslope, g_asymm, rough_g_asymm, diff_asymm, varabsslope, varslope, meanabsslope, absmeansecder, num_pspikes, num_nspikes, num_psdspikes, num_nsdspikes, stdratio, pstrend, num_pm, len_nmax, len_nmin, ptpslopes, oeratio, flatmean, tflatmean, roundmean, troundmean, roundrat, flatrat, naivemax, maxdiff = easy_feats(t,nf,err)
+    
+    # features that were not easily jit-able
+    longtermtrend, skews, kurt, maxslope, minslope, skewslope, num_zcross, mautocorrcoef, periodicity, periodicityr, naiveperiod, maxvars, maxvarsr, amp, normamp, mbp, mid20, mid35, mid50, mid65, mid80, percentamp, magratio, sautocorrcoef, autocorrcoef = fancy_feats(t,nf,err,naivemax,maxdiff)
+    
     ndata = [longtermtrend, meanmedrat, skews, varss, coeffvar, stds, \
                  numoutliers, numnegoutliers, numposoutliers, numout1s, kurt, mad, \
                  maxslope, minslope, meanpslope, meannslope, g_asymm, rough_g_asymm, \
@@ -446,11 +460,28 @@ def feats(t,nf,err):
                  flatmean, tflatmean, roundmean, troundmean, roundrat, flatrat]
     return ndata
 
-def feature_calc(lc)
+def feature_calc(lc):
+    """
+    Purpose:
+        This method is for use when processing multiple lightcurves. It takes a single lightcurve of data at a time, processes it, 
+        dumps the results as an indexed dataframe into a tmp file as a failsafe, and returns the file name as well as the features in a list to be parsed.
+        
+    Args:
+        lc (list) - a list containing:
+            lc[0] (str) - nfile - the name of the file being processed
+            lc[1] (list/np.array) - t - array of times for lightcurve
+            lc[2] (list/np.array) - nf - array of normalized fluxes for lightcurve
+            lc[3] (list/np.array) - err - array of normalized errors for lightcurve
+    Note: requires a global variable "tmpfile" to be defined, this should be a string specifying where data should be temporarily stored.   
+    Returns:
+        nfile - the name of the file sans path
+        ndata - the feature data
+    """
+    
     nfile,t,nf,err = lc[0],lc[1],lc[2],lc[3]
 
     try:
-        ndata = feats(t.astype(np.float64),nf.astype(np.float32),err.astype(float32))
+        ndata = feats(t.astype(np.float64),nf.astype(np.float32),err.astype(np.float32))
             
         fts = ["longtermtrend", "meanmedrat", "skews", "varss", "coeffvar", "stds", \
                "numoutliers", "numnegoutliers", "numposoutliers", "numout1s", "kurt", "mad", \
@@ -467,23 +498,26 @@ def feature_calc(lc)
         df = pd.DataFrame([ndata],index=[nfile[nfile.find('kplr'):]],columns=fts)
         with open(tmpfile,'ab') as f:
             pickle.dump(df,f)
-
-        if __name__=="__main__":
-            return
-        else:
-            return [nfile[nfile.find('kplr'):],ndata]
+        return [nfile[nfile.find('kplr'):],ndata]
         
     except TypeError:
         kml_log = 'kml_log'
         os.system('echo %s ... TYPE ERROR >> %s'%(nfile.replace(fitsDir,""),kml_log))
         return 
 
-def features_from_fits(nfile):
+def import_lcs(nfile):
+    """
+    Purpose: 
+        Read in a lightcurve
+    Args:
+        nflie (string) - file including path of lightcurve (as a fits file)
+    Returns:
+        t (np.array) - time array
+        nf (np.array) - normalized flux array
+        err (np.array) - normalized error array
+    """
     try:
         t,nf,err = read_kepler_curve(nfile)
-        # t = time
-        # err = error
-        # nf = normalized flux.P
         
     except TypeError as err:
         # Files can be truncated by the zipping process.
@@ -492,17 +526,47 @@ def features_from_fits(nfile):
     
     #features = featureCalculation(nfile,t,nf,err)
     return [nfile,t,nf,err]
-    
+
+def join_data(full_features_array):
+    file = []
+    data = []
+    fts = ["longtermtrend", "meanmedrat", "skews", "varss", "coeffvar", "stds", \
+           "numoutliers", "numnegoutliers", "numposoutliers", "numout1s", "kurt", "mad", \
+           "maxslope", "minslope", "meanpslope", "meannslope", "g_asymm", "rough_g_asymm", \
+           "diff_asymm", "skewslope", "varabsslope", "varslope", "meanabsslope", "absmeansecder", \
+           "num_pspikes", "num_nspikes", "num_psdspikes", "num_nsdspikes","stdratio", "pstrend", \
+           "num_zcross", "num_pm", "len_nmax", "len_nmin", "mautocorrcoef", "ptpslopes", \
+           "periodicity", "periodicityr", "naiveperiod", "maxvars", "maxvarsr", "oeratio", \
+           "amp", "normamp", "mbp", "mid20", "mid35", "mid50", \
+           "mid65", "mid80", "percentamp", "magratio", "sautocorrcoef", "autocorrcoef", \
+           "flatmean", "tflatmean", "roundmean", "troundmean", "roundrat", "flatrat"]
+    for i in full_features_array:
+        file.append(i[0])
+        data.append(i[1])
+    df = pd.DataFrame(data,index=file,columns=fts)
+    return df
+
 def features_from_filelist(fl,fitDir,of,fl_as_array=False, numCpus = cpu_count(), verbose=False, tmp_file='tmp_data.p'):
     """
-    This method calculates the features of the given filelist from the fits files located in fitsDir.
-    All output is saved to a pickle file called tmp_data.p (or else whatever is specified).
-        Run clean_up(filelist, fits/file/directory) and save_output('output/file/path') 
-        to clean up the filelist (makes a completed filelist) and to save to the desired location. 
-        Note: save_output() replaces tmp_data.p 
-    
-    Returns pandas dataframe of output.
+    Purpose:
+        This method calculates the features of the given filelist from the fits files located in fitsDir.
+        All output is saved to a pickle file called tmp_data.p (or else whatever is specified).
+            Run clean_up(filelist, fits/file/directory) and save_output('output/file/path') 
+            to clean up the filelist (makes a completed filelist) and to save to the desired location. 
+            Note: save_output() replaces tmp_data.p 
+    Args:
+        fl (string or list) - filelist as a path to a text file containing the files to be processed, one per line, or a list of the files
+        fitDir (string) - path to the fits directory, if path is specified in the filelist, give this a value of ''
+        of (string) - output file, the path to the file where the output should be saved as a pickle
+        fl_as_array (boolean) - if True specifies that fl is given as a list, if False specifies that fl is a filepath
+        numCpus (integer) - Number of cpus on which to process the files
+        verbose (boolean) - if True will output progress statements
+        tmp_file (string) - specifies where to save the temporary data. Useful if processing multiple sets of data in parallel.
+
+    Returns:
+        Pandas dataframe of output for all files in the filelist
     """
+    startTime = datetime.now()
     global fitsDir
     fitsDir = fitDir
     global tmpfile
@@ -512,51 +576,75 @@ def features_from_filelist(fl,fitDir,of,fl_as_array=False, numCpus = cpu_count()
     if verbose:
         if not fl_as_array:print("Reading %s..."%fl)
     files = fl_files_w_path(fl,fitsDir,fl_as_array)
-    useCpus = min([len(files),cpu_count()-1,max(numCpus,1)])
+    
+    if numCpus == -1:useCpus=cpu_count()-1
+    else:useCpus = min([len(files),cpu_count()-1,max(numCpus,1)])
+    
     if verbose:
-        print("Processing %s files..."%len(files))
         print("Using %s cpus to calculate features..."%useCpus)
+        print("Importing {} lightcurves...".format(len(files)))
     
     # Importing all the lightcurves first
-    p = multiprocessing.Pool(useCpus)
-    lcs = p.map(features_from_fits,files)
-    p.close()
-    p.join()
-    
     p = Pool(useCpus)
-    # Method saves to tmp_data.p file after processing each lightcurve as a failsafe.
-    full_features = p.map_async(featureCalculation,lcs)
+    lcs = p.map(import_lcs,files)
     p.close()
     p.join()
+    if verbose:print("Lightcurve import took {}".format(datetime.now()-startTime))
+    fts = ["longtermtrend", "meanmedrat", "skews", "varss", "coeffvar", "stds", \
+           "numoutliers", "numnegoutliers", "numposoutliers", "numout1s", "kurt", "mad", \
+           "maxslope", "minslope", "meanpslope", "meannslope", "g_asymm", "rough_g_asymm", \
+           "diff_asymm", "skewslope", "varabsslope", "varslope", "meanabsslope", "absmeansecder", \
+           "num_pspikes", "num_nspikes", "num_psdspikes", "num_nsdspikes","stdratio", "pstrend", \
+           "num_zcross", "num_pm", "len_nmax", "len_nmin", "mautocorrcoef", "ptpslopes", \
+           "periodicity", "periodicityr", "naiveperiod", "maxvars", "maxvarsr", "oeratio", \
+           "amp", "normamp", "mbp", "mid20", "mid35", "mid50", \
+           "mid65", "mid80", "percentamp", "magratio", "sautocorrcoef", "autocorrcoef", \
+           "flatmean", "tflatmean", "roundmean", "troundmean", "roundrat", "flatrat"]
+    df = pd.DataFrame(columns=fts)
+
+    # Splitting up lcs into 10k lc chunks so that progress can be monitored
+    nlcs = len(lcs)
+    nchunks = int(nlcs/10000)
+    len_last_chunk = nlcs%10000
+    if verbose:print("Processing %s files..."%len(files))
+    featsStartTime = datetime.now()
+    for i in range(nchunks):
+        chunkStartTime = datetime.now()
+        p = Pool(useCpus)
+        # Method saves to tmp_data.p file after processing each lightcurve as a failsafe.
+        full_features = p.map(feature_calc,lcs[i*10000:(i+1)*10000])    
+        p.close()
+        p.join()
+        
+        df = df.append(join_data(full_features))
+        with open(tmpfile,'wb') as file:pickle.dump(df,file) # overwrites failsafe with single dataframe containing all processed data, easier to process if system failure later.
+        del(full_features)
+        
+        if verbose:print("{}/{} completed. Time for chunk: {}".format((i+1)*10000,nlcs,datetime.now()-chunkStartTime))
+
+    # last chunk
+    p = Pool(useCpus)
+    full_features = p.map(feature_calc,lcs[nlcs-len_last_chunk:])
+    p.close()
+    p.join()
+    df = df.append(join_data(full_features))
+    del(full_features)
     
     if verbose:
-        print("Features have been calculated")
-        print("Cleaning up...")
-    if not fl_as_array:clean_up(fl)
-    
-    if verbose:print("Saving output to %s"%of)
-    fts = ["longtermtrend", "meanmedrat", "skews", "varss", "coeffvar", "stds", \
-               "numoutliers", "numnegoutliers", "numposoutliers", "numout1s", "kurt", "mad", \
-               "maxslope", "minslope", "meanpslope", "meannslope", "g_asymm", "rough_g_asymm", \
-               "diff_asymm", "skewslope", "varabsslope", "varslope", "meanabsslope", "absmeansecder", \
-               "num_pspikes", "num_nspikes", "num_psdspikes", "num_nsdspikes","stdratio", "pstrend", \
-               "num_zcross", "num_pm", "len_nmax", "len_nmin", "mautocorrcoef", "ptpslopes", \
-               "periodicity", "periodicityr", "naiveperiod", "maxvars", "maxvarsr", "oeratio", \
-               "amp", "normamp", "mbp", "mid20", "mid35", "mid50", \
-               "mid65", "mid80", "percentamp", "magratio", "sautocorrcoef", "autocorrcoef", \
-               "flatmean", "tflatmean", "roundmean", "troundmean", "roundrat", "flatrat"]
-    full_features = np.array(full_features)
-    df = pd.DataFrame(index=full_features[:,0],data=[:,1],columns=fts)
-    pickle.dump(df,open(of,'wb'))
-    
-    #save_output(full_features)
-
+        print("Features have been calculated, total time to calculate features: {}".format(datetime.now()-featsStartTime))
+        print("Saving output to %s"%of)
+    with open(of,'wb') as file:pickle.dump(df,file)
+    if verbose:print("Cleaning up...")
+    os.remove(tmpfile)
+    del(lcs,files,p,df)
     if verbose:print("Done.")
     
     if __name__=="__main__":
         return
     else:
-        return pickle.load(open(of,'rb'))
+        with open(of,'rb') as file:
+            feats = pickle.load(file)
+        return feats
     
 if __name__=="__main__":
     """
@@ -583,7 +671,6 @@ if __name__=="__main__":
         if of  == "":
             print("No output path specified, saving to output.csv in local folder.")
             of = 'output.csv'
-    from datetime import datetime
     start = datetime.now()
     features_from_filelist(fl,fitsDir,of,verbose=True)
     print(datetime.now()-start)
