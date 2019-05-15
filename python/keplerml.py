@@ -93,7 +93,7 @@ def recover(fl,temp_file,fl_as_array=False):
         fl_as_array (boolean) - true if the filelist is given as a list or numpy array 
     Returns:
         files - an array of files remaining to be processed
-        df - a dataframe of successfully processed files
+        df - a datUnpicklingErroraframe of successfully processed files
         """
     if fl_as_array:files = fl
     else: 
@@ -234,29 +234,41 @@ def easy_feats(t,nf,err):
     naivemax,nmax_times,nmax_inds = [],[],[]
     naivemins,nmin_times,nmin_inds = [],[],[]
     for j in range(len(nf)):
-        nfj = nf[j]
-        if j-10<0:
-            jmin=0
+    nfj = nf[j]
+    if j-10<0:
+        jmin=0
+    else:
+        jmin=j-10
+    if j+10>len(nf)-1:
+        jmax=len(nf-1)
+    else:
+        jmax=j+10
+
+    max_nf=nf[jmin]
+    min_nf=nf[jmin]
+    for k in range(jmin,jmax):
+        if nf[k] >= max_nf:
+            max_nf = nf[k]
+        elif nf[k] <= min_nf:
+            min_nf = nf[k]
+    
+    if nf[j]==max_nf:
+        if len(nmax_inds)>0:
+            if j-nmax_inds[-1]>10:
+                naivemax.append(nf[j])
+                nmax_times.append(t[j])
+                nmax_inds.append(j)
         else:
-            jmin=j-10
-        if j+10>len(nf)-1:
-            jmax=len(nf-1)
-        else:
-            jmax=j+10
-            
-        max_nf=nf[jmin]
-        min_nf=nf[jmin]
-        for k in range(jmin,jmax):
-            if nf[k] >= max_nf:
-                max_nf = nf[k]
-            elif nf[k] <= min_nf:
-                min_nf = nf[k]
-        
-        if nf[j]==max_nf:
             naivemax.append(nf[j])
             nmax_times.append(t[j])
-            nmax_inds.append(j)
-        elif nf[j]==min_nf:
+            nmax_inds.append(j)    
+    elif nf[j]==min_nf:
+        if len(nmin_inds)>0:
+            if j-nmin_inds[-1]>10:
+                naivemins.append(nf[j])
+                nmin_times.append(t[j])
+                nmin_inds.append(j)
+        else:
             naivemins.append(nf[j])
             nmin_times.append(t[j])
             nmin_inds.append(j)

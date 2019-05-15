@@ -1,31 +1,62 @@
+import sys
+from IPython.display import display
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib import colors
 import matplotlib.cm as cmx
 import matplotlib.gridspec as gridspec
-
-from IPython.display import display
-
+from numba import cuda
 import numpy as np
-np.set_printoptions(threshold=np.nan)
+np.set_printoptions(threshold=sys.maxsize)
 import pandas as pd
-
-import seaborn as sns
 import pyfits as fits
+import seaborn as sns
+from sklearn import preprocessing
+from sklearn.manifold import TSNE
+from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import DBSCAN, KMeans
+from sklearn.decomposition import PCA
 
-import sys
-sys.path.append('python')
-from clusterOutliers import clusterOutliers
+
+if sys.version_info[0] < 3:
+    import Tkinter as Tk
+else:
+    import tkinter as Tk
+
+###############################
+### Functions for importing ###
+###############################
+def read_kepler_curve(file):
+    """
+    Given the path of a fits file, this will extract the light curve and normalize it.
+    """
+    lc = fits.getdata(file)
+    t = lc.field('TIME')
+    f = lc.field('PDCSAP_FLUX')
+    err = lc.field('PDCSAP_FLUX_ERR')
+    
+    err = err[np.isfinite(t)&np.isfinite(f)]
+    f_copy = f[np.isfinite(t)&np.isfinite(f)]
+    t = t[np.isfinite(t)&np.isfinite(f)]
+    f = f_copy
+    
+    err = err/np.median(f)
+    nf = f / np.median(f)
+    
+    return t, nf, err
 
 def make_sampler(inds=['8462852']): 
     """
+    Purpose:
+        Useful to generate samples across quarters with common sources where data is contained as a 
+        Pandas dataframe, with indices set to be identifying labels (i.e. kplr008462852)
+        
     Args:
         inds (Array of strings) - array of indices, as identifying strings, to be pulled from a data frame, 
                                   can be with or without kplr prefix
     Returns:
         Function that will pull the data, indicated by inds, from a dataframe df 
-        
-    Useful to generate samples across quarters with common sources where data is contained as a 
-    Pandas dataframe, with indices set to be identifying labels (i.e. kplr008462852)
     
     To use:
         Define array containing IDs of sources of interest as strings
@@ -33,19 +64,97 @@ def make_sampler(inds=['8462852']):
         Generate dataframe by calling new function.
 
     Example:
-    tabby_sample = make_sampler(inds=['8462852'])
-    Q4_sample = tabby_sample(Q4.data)
-    Q8_sample = tabby_sample(Q8.data)
-    etc.
+        tabby_sample = make_sampler(inds=['8462852']) # A sampler function for the specified sample
+        Q4_sample = tabby_sample(Q4.data) # The Quarter 4 data for the sample
+        Q8_sample = tabby_sample(Q8.data) # The quarter 8 data for the sample
+        etc.
     """
     return lambda df: df[df.index.str.contains('|'.join(inds))]
 
-def import_generator(suffix='_FullSample.csv'):
+#####################################
+### Functions for data processing ###
+#####################################
+def data_scaler(df,nfeats=60):
     """
-    Creates a function to import quarters with common suffixes (like "_output.csv" or "_PaperSample.csv")
+    Purpose:
+        Data scaler this work, returns a dataframe w/ scaled features
+    Args:
+        df (pd.DataFrame) - dataframe with features to be scaled
+        nfeats (int) - number of features in the dataframe, defaults to 60, should be changed if dataframe is a reduction.
+    Returns:
+        scaled_df (pd.DataFrame)- the dataframe of scaled data. If there were additional calculated columns in the original datafarme, they will not be present in the scaled dataframe.
     """
-    return lambda QN: clusterOutliers("/home/dgiles/Documents/KeplerLCs/output/"+QN+suffix,"/home/dgiles/Documents/KeplerLCs/fitsFiles/"+QN+"fitsfiles")
+    data = df.iloc[:,0:nfeats]
+    scaler = preprocessing.StandardScaler().fit(data)
+    scaled_data = scaler.transform(data)
+    scaled_df = pd.DataFrame(index=df.index,\
+                             columns=df.columns[:nfeats],\
+                             data=scaled_data)
+    self.feats_scaled = scaled_df
+    return scaled_df
 
+def tsne_fit(data,perplexity='auto',scaled=False):
+    """
+    Performs a t-SNE dimensionality reduction on the data sample generated.
+    Uses a PCA initialization and the perplexity given, or defaults to 1/10th the amount of data.
+    
+    Returns:
+        tsneReduction (pd.DataFrame) - a dataframe containing the coordinates for the tsne reduction.
+    """
+    if type(perplexity)==str:
+        perplexity=len(data)/10
+    if scaled:
+        scaledData = data
+    else:
+        scaledData = data_scaler(data,nfeats=len(data.columns))
+    
+    tsne = TSNE(n_components=2,perplexity=perplexity,init='pca',verbose=True)
+    fit=tsne.fit_transform(scaledData)
+    # Goal is to minimize the KL-Divergence
+    if sklearn.__version__ == '0.18.1':
+        print("KL-Divergence was %s"%tsne.kl_divergence_ )
+    tsneReduction = pd.DataFrame(index=data.index,data=fit,columns=['tsne_x','tsne_y'])
+    return tsneReduction
+
+def pca_red(data,var_rat=0.9,scaled=False):
+    """
+    Returns a pca reduction of the given data that explains a
+    given fraction of the variance.
+    Args:
+        data (pd.DataFrame) - the data to be reduced, culled of irrelevant data
+        var_rat (float between 0 and 1) - the ratio of variance to be 
+            explained by the transformed data
+        scaled (boolean) - if False, data will be scaled using sklearn's preprocessing module StandardScaler
+            
+    Returns:
+        reduced_data (pd.DataFrame) - dataframe of the reduced data with colums being the principle component inds
+        prints the number of dimensions and the explained variance
+    """
+    if scaled:
+        scaled_data = data
+    else:
+        print("Scaling data using StandardScaler...")
+        scaled_data = data_scaler(data,nfeats=len(data.columns))
+
+    print("Finding minimum number of dimensions to explain {:04.1f}% of the variance...".format(var_rat*100))
+    
+    for i in range(60):
+        pca = PCA(n_components=i)
+        pca.fit(scaled_data)
+        if sum(pca.explained_variance_ratio_) >= var_rat:
+            break
+    print("""
+    Dimensions: {:d},
+    Variance explained: {:04.1f}%
+    """.format(i,sum(pca.explained_variance_ratio_)*100))
+    
+    reduced_data = pd.DataFrame(index=data.index, \
+                                data=pca.transform(scaled_data))
+    return reduced_data
+
+##############################
+### Functions for plotting ###
+##############################
 def colors_for_plot(inds,cmap='nipy_spectral'):
     """
     Args:
@@ -191,27 +300,6 @@ def four_panel(data, title='Data',
     
     return
 
-
-def read_kepler_curve(file):
-    """
-    Given the path of a fits file, this will extract the light curve and normalize it.
-    """
-    lc = fits.open(file)[1].data
-    t = lc.field('TIME')
-    f = lc.field('PDCSAP_FLUX')
-    err = lc.field('PDCSAP_FLUX_ERR')
-
-    err = err[np.isfinite(t)]
-    f = f[np.isfinite(t)]
-    t = t[np.isfinite(t)]
-    err = err[np.isfinite(f)]
-    t = t[np.isfinite(f)]
-    f = f[np.isfinite(f)]
-    err = err/np.median(f)
-    nf = f / np.median(f)
-
-    return t, nf, err
-
 def plot_lc(file,filepath,c='blue',ax=False):
     """
     kid should be full id including time information
@@ -298,6 +386,232 @@ catalogs = {'koi_full':['list_koi_full.txt',',',2],
             'flares':['kepler_solar_flares.txt',None,22],
             'no_signal':['list_kepler_nosig.txt',None,28],
             'periodic':['list_kepler_MSperiods.txt',None,32]}
+
+def interactive_plot(df,pathtofits,clusterLabels):
+    """
+    Purpose:
+        Plot an interactive representation of a set of labelled data.
+        Clicking on a point in the scatterplot will plot the corresponding lightcurve below.
+    Args:
+        df (pd.DataFrame) - a dataframe containing the data to be plotted. The first 2 columns are plotted.
+        pathtofits (str) - path to the fits file directory
+        clusterLabels (str or list/list equivalent) - if str, will select the corresponding column from df.
+            if list or list equivalent, then labels should be stored in order matching the dataframe
+    """
+    
+    root = Tk.Tk()
+    root.wm_title("Scatter")
+
+    files = df.index
+    if type(clusterLabels) == str:
+        labels = df[clusterLabels]
+    else:
+        labels = clusterLabels
+
+    colorVal = colors_for_plot(labels)
+
+    data_out = df[labels==-1]
+    files_out = data_out.index
+    data_cluster = df[labels!=-1]
+    files_cluster = data_cluster.index
+    
+    data = np.array(df.iloc[:,[0,1]])
+    
+    outX = data_out.iloc[:,0]
+    outY = data_out.iloc[:,1]
+    clusterX = data_cluster.iloc[:,0]
+    clusterY = data_cluster.iloc[:,1]
+    
+    """--- Organizing data and Labels ---"""
+    if df.index.str.contains('8462852').any():
+        tabbyInd = list(df.index).index(df[df.index.str.contains('8462852')].index[0])            
+    else:
+        tabbyInd = 0
+        
+    fig = Figure(figsize=(20,10))
+    # a tk.DrawingArea
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas.get_tk_widget().pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
+    # Toolbar to help navigate the data (pan, zoom, save image, etc.)
+    toolbar = NavigationToolbar2TkAgg(canvas, root)
+    toolbar.update()
+    canvas._tkcanvas.pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
+    gs = gridspec.GridSpec(2,100)
+    with sns.axes_style("white"):
+        # empty subplot for scattered data
+        ax = fig.add_subplot(gs[0,:62])
+        # empty subplot for lightcurves
+        ax2 = fig.add_subplot(gs[1,:])
+        # empty subplot for center detail
+        ax3 = fig.add_subplot(gs[0,67:])
+    @cuda.jit
+    def distance_cuda(dx,dy,dd):
+        bx = cuda.blockIdx.x # block in the grid
+        bw = cuda.blockDim.x # size of a block
+        tx = cuda.threadIdx.x # unique thread ID within a block
+        i = tx + bx * bw
+        if i>len(dd):
+            return
+        
+        # d_ph is a distance placeholder
+        d_ph = (dx[i]-dx[0])**2+(dy[i]-dy[0])**2
+        dd[i]=d_ph**.5
+        return
+    
+    def distances(pts,ex,ey):
+        # Calculates distances between N points
+        pts = np.array(pts)
+        N=len(pts)
+        # Allocate host memory arrays
+        # Transpose pts array to n_dims x n_pts, each index of x contains all of a dimensions coordinates
+        XT = np.transpose(pts)
+        x = np.array(XT[0])
+        x = np.insert(x,0,ex)
+        y = np.array(XT[1])
+        y = np.insert(y,0,ey)
+        d = np.zeros(N)
+        # Allocate and copy GPU/device memory
+        d_x = cuda.to_device(x)
+        d_y = cuda.to_device(y)
+        d_d = cuda.to_device(d)
+        threads_per_block = 128
+        number_of_blocks =N/128+1 
+        distance_cuda [ number_of_blocks, threads_per_block ] (d_x,d_y,d_d)
+        d_d.copy_to_host(d)
+        return d[1:]   
+    
+    def calcClosestDatapoint(X, event):
+        """Calculate which data point is closest to the mouse position.
+        Args:
+            X (np.array) - array of points, of shape (numPoints, 2)
+            event (MouseEvent) - mouse event (containing mouse position)
+        Returns:
+            smallestIndex (int) - the index (into the array of points X) of the element closest to the mouse position
+        """
+        ex,ey = ax.transData.inverted().transform((event.x,event.y))
+        
+        #distances = [distance (XT[:,i], event) for i in range(XT.shape[1])]
+        Ds = distances(X,ex,ey)
+        return np.argmin(Ds)
+    def drawData(index):
+        # Plots the lightcurve of the point chosen
+        ax2.cla()
+        f = pathtofits+df.index[index]
+        t,nf,err=qt.read_kepler_curve(f)
+        x=t
+        y=nf
+        axrange=0.55*(max(y)-min(y))
+        mid=(max(y)+min(y))/2
+        yaxmin = mid-axrange
+        yaxmax = mid+axrange
+        if yaxmin < .95:
+            if yaxmax > 1.05:
+                ax2.set_ylim(yaxmin,yaxmax)
+            else:
+                ax2.set_ylim(yaxmin,1.05)
+        elif yaxmax > 1.05:
+            ax2.set_ylim(.95,yaxmax)
+        else:
+            ax2.set_ylim(.95,1.05)
+
+        ax2.plot(x, y, 'o',markeredgecolor='none', c=colorVal[index], alpha=0.2)
+        ax2.plot(x, y, '-',markeredgecolor='none', c=colorVal[index], alpha=0.7)
+        #ax2.set_title(files[index][:13],fontsize = 20)
+        ax2.set_xlabel('Time (Days)',fontsize=22)
+        ax2.set_ylabel(r'$\frac{\Delta F}{F}$',fontsize=30)
+        fig.suptitle(files[index][:13],fontsize=30)
+        canvas.draw()
+    def annotatePt(XT, index):
+        """Create popover label in 3d chart
+        Args:
+            X (np.array) - array of points, of shape (numPoints, 3)
+            index (int) - index (into points array X) of item which should be printed
+        Returns:
+            None
+        """
+        x2, y2 = XT[index][0], XT[index][1]
+        # Either update the position, or create the annotation
+        if hasattr(annotatePt, 'label'):
+            annotatePt.label.remove()
+            annotatePt.emph.remove()
+        if hasattr(annotatePt, 'emphCD'):
+            annotatePt.emphCD.remove()
+        x_ax = ax.get_xlim()[1]-ax.get_xlim()[0]
+        y_ax = ax.get_ylim()[1]-ax.get_ylim()[0]
+        # Get data point from array of points X, at position index
+        annotatePt.label = ax.annotate( "",
+            xy = (x2, y2), xytext = (x2+.1*x_ax, y2+.2*y_ax),
+            arrowprops = dict(headlength=20,headwidth=20,width=6,shrink=.1,color='black'))
+        annotatePt.emph = ax.scatter(x2,y2,marker='o',s=50,c='orange')
+        if files[index] in files_cluster:
+            annotatePt.emphCD = ax3.scatter(x2,y2,marker='o',s=150,c='orange')
+        else:
+            annotatePt.emphCD = ax.scatter(x2,y2,marker='o',s=50,c='orange')
+        canvas.draw()
+    def onMouseClick(event, X):
+        """Event that is triggered when mouse is clicked. Shows lightcurve for data point closest to mouse."""
+        #XT = np.array(X.T) # array organized by feature, each in it's own array
+        closestIndex = calcClosestDatapoint(X, event)
+        drawData(closestIndex)
+    def onMouseRelease(event, X):
+        #XT = np.array(X.T)
+        closestIndex = calcClosestDatapoint(X, event)
+        annotatePt(X,closestIndex)
+        #for centerIndex in centerIndices:
+        #    annotateCenter(XT,centerIndex)
+    def connect(X):
+        if hasattr(connect,'cidpress'):
+            fig.canvas.mpl_disconnect(connect.cidpress)
+        if hasattr(connect,'cidrelease'):
+            fig.canvas.mpl_disconnect(connect.cidrelease)
+        connect.cidpress = fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event,X))
+        connect.cidrelease = fig.canvas.mpl_connect('button_release_event', lambda event: onMouseRelease(event, X))
+    def redraw():       
+        # Clear the existing plots
+        ax.cla()
+        ax2.cla()
+        ax3.cla()
+        # Set those labels
+        ax.set_xlabel("Reduced X",fontsize=18)
+        ax.set_ylabel("Reduced Y",fontsize=18)
+        # Scatter the data
+        ax.scatter(outX, outY,c="red",s=30,alpha=.5)
+        ax.hexbin(clusterX,clusterY,mincnt=5,bins="log",cmap="viridis",gridsize=35)
+        hb = ax3.hexbin(clusterX,clusterY,mincnt=5,bins="log",cmap="viridis",gridsize=35)
+        cb = fig.colorbar(hb)
+        """
+        ax.scatter(clusterX,clusterY,s=30,c='b')
+        ax3.scatter(clusterX,clusterY)
+        """
+        ax3.set_title("Center Density Detail",fontsize=14)
+        ax3.set_xlabel("Reduced X",fontsize=18)
+        ax3.set_ylabel("Reduced Y",fontsize=18)
+        ax.tick_params(axis='both',labelsize=18)
+        ax2.tick_params(axis='both',labelsize=18)
+        ax3.tick_params(axis='both',labelsize=18)
+        #for centerIndex in centerIndices:
+        #    annotateCenter(currentData1,centerIndex)
+        if hasattr(redraw,'cidenter'):
+                fig.canvas.mpl_disconnect(redraw.cidenter)
+                fig.canvas.mpl_disconnect(redraw.cidexit)
+        connect(data)
+        annotatePt(data,tabbyInd)
+        drawData(tabbyInd)
+        #fig.savefig('Plots/Q16_PCA_kmeans/Tabby.png')
+        canvas.draw()
+        canvas.show()
+    print("Plotting.")
+    redraw()            
+    def _delete_window():
+        print("window closed.")
+        root.destroy()
+        sys.exit()
+    root.protocol("WM_DELETE_WINDOW",_delete_window)
+    root.mainloop()
+    
+###########################################################
+### Class and methods for the weirdness profile/dossier ###
+###########################################################
 
 class weirdnessProfile(object):
     def __init__(self,
