@@ -6,11 +6,12 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib import colors
 import matplotlib.cm as cmx
 import matplotlib.gridspec as gridspec
+# cuda needs cudatoolkit 9.0, 10.0 is incompatible.
 from numba import cuda
 import numpy as np
 np.set_printoptions(threshold=sys.maxsize)
 import pandas as pd
-import pyfits as fits
+import astropy.io.fits as fits
 import seaborn as sns
 from sklearn import preprocessing
 from sklearn.manifold import TSNE
@@ -90,7 +91,6 @@ def data_scaler(df,nfeats=60):
     scaled_df = pd.DataFrame(index=df.index,\
                              columns=df.columns[:nfeats],\
                              data=scaled_data)
-    self.feats_scaled = scaled_df
     return scaled_df
 
 def tsne_fit(data,perplexity='auto',scaled=False):
@@ -433,7 +433,7 @@ def interactive_plot(df,pathtofits,clusterLabels):
     canvas = FigureCanvasTkAgg(fig, master=root)
     canvas.get_tk_widget().pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
     # Toolbar to help navigate the data (pan, zoom, save image, etc.)
-    toolbar = NavigationToolbar2TkAgg(canvas, root)
+    toolbar = NavigationToolbar2Tk(canvas, root)
     toolbar.update()
     canvas._tkcanvas.pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
     gs = gridspec.GridSpec(2,100)
@@ -475,8 +475,8 @@ def interactive_plot(df,pathtofits,clusterLabels):
         d_y = cuda.to_device(y)
         d_d = cuda.to_device(d)
         threads_per_block = 128
-        number_of_blocks =N/128+1 
-        distance_cuda [ number_of_blocks, threads_per_block ] (d_x,d_y,d_d)
+        number_of_blocks =int(N/128)+1 
+        distance_cuda [number_of_blocks, threads_per_block](d_x,d_y,d_d)
         d_d.copy_to_host(d)
         return d[1:]   
     
@@ -497,7 +497,7 @@ def interactive_plot(df,pathtofits,clusterLabels):
         # Plots the lightcurve of the point chosen
         ax2.cla()
         f = pathtofits+df.index[index]
-        t,nf,err=qt.read_kepler_curve(f)
+        t,nf,err=read_kepler_curve(f)
         x=t
         y=nf
         axrange=0.55*(max(y)-min(y))
@@ -599,7 +599,6 @@ def interactive_plot(df,pathtofits,clusterLabels):
         drawData(tabbyInd)
         #fig.savefig('Plots/Q16_PCA_kmeans/Tabby.png')
         canvas.draw()
-        canvas.show()
     print("Plotting.")
     redraw()            
     def _delete_window():

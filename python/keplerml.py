@@ -6,7 +6,7 @@ np.set_printoptions(threshold=sys.maxsize)
 from scipy import stats
 from multiprocessing import Pool,cpu_count
 from datetime import datetime
-import pyfits
+import astropy.io.fits as fits
 import pickle
 from numba import njit
 from datetime import datetime
@@ -61,7 +61,7 @@ def read_kepler_curve(file):
     """
     Given the path of a fits file, this will extract the light curve and normalize it.
     """
-    lc = pyfits.getdata(file)
+    lc = fits.getdata(file)
     t = lc.field('TIME')
     f = lc.field('PDCSAP_FLUX')
     err = lc.field('PDCSAP_FLUX_ERR')
@@ -70,10 +70,10 @@ def read_kepler_curve(file):
     f_copy = f[np.isfinite(t)&np.isfinite(f)]
     t = t[np.isfinite(t)&np.isfinite(f)]
     f = f_copy
-
+    
     err = err/np.median(f)
     nf = f / np.median(f)
-
+    
     return t, nf, err
 
 def recover(fl,temp_file,fl_as_array=False):
@@ -234,44 +234,44 @@ def easy_feats(t,nf,err):
     naivemax,nmax_times,nmax_inds = [],[],[]
     naivemins,nmin_times,nmin_inds = [],[],[]
     for j in range(len(nf)):
-    nfj = nf[j]
-    if j-10<0:
-        jmin=0
-    else:
-        jmin=j-10
-    if j+10>len(nf)-1:
-        jmax=len(nf-1)
-    else:
-        jmax=j+10
+        nfj = nf[j]
+        if j-10<0:
+            jmin=0
+        else:
+            jmin=j-10
+        if j+10>len(nf)-1:
+            jmax=len(nf-1)
+        else:
+            jmax=j+10
 
-    max_nf=nf[jmin]
-    min_nf=nf[jmin]
-    for k in range(jmin,jmax):
-        if nf[k] >= max_nf:
-            max_nf = nf[k]
-        elif nf[k] <= min_nf:
-            min_nf = nf[k]
-    
-    if nf[j]==max_nf:
-        if len(nmax_inds)>0:
-            if j-nmax_inds[-1]>10:
+        max_nf=nf[jmin]
+        min_nf=nf[jmin]
+        for k in range(jmin,jmax):
+            if nf[k] >= max_nf:
+                max_nf = nf[k]
+            elif nf[k] <= min_nf:
+                min_nf = nf[k]
+
+        if nf[j]==max_nf:
+            if len(nmax_inds)>0:
+                if j-nmax_inds[-1]>10:
+                    naivemax.append(nf[j])
+                    nmax_times.append(t[j])
+                    nmax_inds.append(j)
+            else:
                 naivemax.append(nf[j])
                 nmax_times.append(t[j])
-                nmax_inds.append(j)
-        else:
-            naivemax.append(nf[j])
-            nmax_times.append(t[j])
-            nmax_inds.append(j)    
-    elif nf[j]==min_nf:
-        if len(nmin_inds)>0:
-            if j-nmin_inds[-1]>10:
+                nmax_inds.append(j)    
+        elif nf[j]==min_nf:
+            if len(nmin_inds)>0:
+                if j-nmin_inds[-1]>10:
+                    naivemins.append(nf[j])
+                    nmin_times.append(t[j])
+                    nmin_inds.append(j)
+            else:
                 naivemins.append(nf[j])
                 nmin_times.append(t[j])
                 nmin_inds.append(j)
-        else:
-            naivemins.append(nf[j])
-            nmin_times.append(t[j])
-            nmin_inds.append(j)
             
     naivemax = np.array(naivemax)
     nmax_times = np.array(nmax_times)
