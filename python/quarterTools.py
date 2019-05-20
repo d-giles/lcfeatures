@@ -101,6 +101,7 @@ def tsne_fit(data,perplexity='auto',scaled=False):
     Returns:
         tsneReduction (pd.DataFrame) - a dataframe containing the coordinates for the tsne reduction.
     """
+    assert len(data)<20000, "Dataset too large, t-SNE cannot handle very large datasets. Try sampling a subset."
     if type(perplexity)==str:
         perplexity=len(data)/10
     if scaled:
@@ -110,18 +111,18 @@ def tsne_fit(data,perplexity='auto',scaled=False):
     
     tsne = TSNE(n_components=2,perplexity=perplexity,init='pca',verbose=True)
     fit=tsne.fit_transform(scaledData)
-    # Goal is to minimize the KL-Divergence
+    # Goal is to minimize the KL-Divergence, so it can be useful to know what the resulting divergence is. 
     if sklearn.__version__ == '0.18.1':
         print("KL-Divergence was %s"%tsne.kl_divergence_ )
     tsneReduction = pd.DataFrame(index=data.index,data=fit,columns=['tsne_x','tsne_y'])
     return tsneReduction
 
-def pca_red(data,var_rat=0.9,scaled=False):
+def pca_red(data,var_rat=0.9,scaled=False,verbose=True):
     """
     Returns a pca reduction of the given data that explains a
     given fraction of the variance.
     Args:
-        data (pd.DataFrame) - the data to be reduced, culled of irrelevant data
+        data (pd.DataFrame) - the data to be reduced (the features presumably), culled of irrelevant data (any calculated columns like scores or outlier labels)
         var_rat (float between 0 and 1) - the ratio of variance to be 
             explained by the transformed data
         scaled (boolean) - if False, data will be scaled using sklearn's preprocessing module StandardScaler
@@ -138,15 +139,16 @@ def pca_red(data,var_rat=0.9,scaled=False):
 
     print("Finding minimum number of dimensions to explain {:04.1f}% of the variance...".format(var_rat*100))
     
-    for i in range(60):
+    for i in range(len(data.columns)):
         pca = PCA(n_components=i)
         pca.fit(scaled_data)
         if sum(pca.explained_variance_ratio_) >= var_rat:
             break
-    print("""
-    Dimensions: {:d},
-    Variance explained: {:04.1f}%
-    """.format(i,sum(pca.explained_variance_ratio_)*100))
+    if verbose:
+        print("""
+        Dimensions: {:d},
+        Variance explained: {:04.1f}%
+        """.format(i,sum(pca.explained_variance_ratio_)*100))
     
     reduced_data = pd.DataFrame(index=data.index, \
                                 data=pca.transform(scaled_data))

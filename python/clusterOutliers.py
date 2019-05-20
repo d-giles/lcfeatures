@@ -5,12 +5,13 @@ import km_outliers
 import db_outliers
 import quarterTools as qt
 
-def importGen(filedir="/home/dgiles/Documents/KeplerLCs/output/",suffix='_output.p'):
+def import_gen(filedir="/home/dgiles/Documents/KeplerLCs/output/",suffix="_output.p",fitsdir="/home/dgiles/Documents/KeplerLCs/fitsFiles/"):
     """
     Purpose:
-        Creates a function to import quarters with common suffixes in a common directory (like "_output.csv" or "_PaperSample.csv")
+        Creates a function to import quarters with common suffixes in a common directory (like "_output.csv" or "_PaperSample.csv"). 
     Args:
         filedir (str) - path to common directory
+        fitsdir (str) - path to fitsfile directory (containing seperate directories for each quarter).
         suffix (str) - common suffix for output files
     Returns:
         lambda QN - a function which can be called with a specific Quarter specifified as a string.
@@ -20,7 +21,7 @@ def importGen(filedir="/home/dgiles/Documents/KeplerLCs/output/",suffix='_output
         Q1_cluster_object = importer('Q1')
         Q1_cluster_object is the clusterOutlier object for the Quarter 1 output features.
     """
-    return lambda QN: clusterOutliers(filedir+QN+suffix,"/home/dgiles/Documents/KeplerLCs/fitsFiles/"+QN+"fitsfiles")
+    return lambda QN: clusterOutliers(filedir+QN+suffix,fitsdir+QN+"fitsfiles")
 
 class clusterOutliers(object):
     def __init__(self,feats,fitsDir,output_file='out.coo'):
