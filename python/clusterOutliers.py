@@ -5,7 +5,7 @@ import km_outliers
 import db_outliers
 import quarterTools as qt
 
-def import_gen(filedir="/home/dgiles/Documents/KeplerLCs/output/",suffix="_output.p",fitsdir="/home/dgiles/Documents/KeplerLCs/fitsFiles/"):
+def import_gen(filedir="/home/dgiles/Documents/KeplerLCs/output/",suffix="_output.p",fitsdir="/home/dgiles/Documents/KeplerLCs/fitsFiles/",out_file_ext='.coo'):
     """
     Purpose:
         Creates a function to import quarters with common suffixes in a common directory (like "_output.csv" or "_PaperSample.csv"). 
@@ -21,7 +21,7 @@ def import_gen(filedir="/home/dgiles/Documents/KeplerLCs/output/",suffix="_outpu
         Q1_cluster_object = importer('Q1')
         Q1_cluster_object is the clusterOutlier object for the Quarter 1 output features.
     """
-    return lambda QN: clusterOutliers(filedir+QN+suffix,fitsdir+QN+"fitsfiles")
+    return lambda QN: clusterOutliers(filedir+QN+suffix,fitsdir+QN+"fitsfiles",output_file=filedir+QN+out_file_ext)
 
 class clusterOutliers(object):
     def __init__(self,feats,fitsDir,output_file='out.coo'):
@@ -46,42 +46,41 @@ class clusterOutliers(object):
             self.fitsDir = fitsDir+"/"
         self.output_file = output_file
         self.files = self.data.index # A list of all files.
-        # Initializing the data and files samples with the first 100 entries.
-        self.dataSample = self.data.iloc[:100]
-        self.filesSample = self.files[:100]
-        self.importedForPlotting = False
-        self.sampleGenerated = False
-        self.sampleTSNE = False
+        # Initializing the data and files samples with 1000 entries.
+        self.sample(1000,df='self',tabby=False,replace=True,rs=42) # Initializes self.dataSample and self.filesSample
+        # Storing all reductions related to this object's data in its own reductions dictionary.
+        self.reductions = dict()
+
     
-    def sample(self, numLCs=10000, df='self',tabby=True, replace=True):
+    def sample(self, numLCs=10000, df='self',tabby=True, replace=True,rs=False):
         """
         Args:
             numLCs (int) - size of sample
             df ('self' or pd.DataFrame) - if self, will sample the object, if given a dataframe, will sample the given dataframe
             tabby (boolean) - if true, will ensure Boyajian's star is part of the sample.
             replace (boolean) - if true will replace the existing self.dataSample (used primarily for visualization)
+            rs (boolean or int) - if int, will provide a set random state for the sample.
         Returns:
             sample (pd.DataFrame) - a randomly sampled subset from the givne dataframe
         """
         if type(df)==str:
             df = self.data
-            
+        
         assert (numLCs < len(df.index)),"Number of samples greater than the number of files."
-        print("Creating random file list...")
-        sample = df.sample(n=numLCs)
+        
+        if type(rs)==int:
+            sample = df.sample(n=numLCs,random_state=rs)
+        else:
+            sample = df.sample(n=numLCs)
         
         if tabby:
-            print("Checking for Boyajian's Star...")
             if not sample.index.str.contains('8462852').any():
-                print("Adding Boyajian's Star...")
                 sample = sample.drop(sample.index[0])
                 sample = sample.append(self.data[self.data.index.str.contains('8462852')])
             
         if replace:
             self.dataSample = sample
-            self.filesSample = sample.index
-            self.sampleGenerated = True
-            
+            self.filesSample = sample.index          
         return sample
     
     def km_out(self,df='self',k=1):
@@ -98,6 +97,13 @@ class clusterOutliers(object):
         self.DB_labels = labels
         return labels
     
+    def pca_red(self,df='self',red_name='PCA90',var_rat=0.9,scaled=False,verbose=True):
+        if type(df)!=pd.core.frame.DataFrame:
+            df = self.data
+        pcaRed = qt.pca_red(df,var_rat,scaled,verbose)
+        self.reductions[red_name]=pcaRed
+        return pcaRed
+    
     def save(self,of=False):
         """
         Pickles the whole object
@@ -111,7 +117,7 @@ class clusterOutliers(object):
             self.output_file=of
         try:
             with open(of,'wb') as file:
-                pickle.dump(self,of)  
+                pickle.dump(self,file)  
         except:
             print("Something went wrong, check output file path.")
 
