@@ -50,7 +50,6 @@ class clusterOutliers(object):
         self.sample(1000,df='self',tabby=False,replace=True,rs=42) # Initializes self.dataSample and self.filesSample
         # Storing all reductions related to this object's data in its own reductions dictionary.
         self.reductions = dict()
-
     
     def sample(self, numLCs=10000, df='self',tabby=True, replace=True,rs=False):
         """
