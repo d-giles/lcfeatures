@@ -134,10 +134,10 @@ def pca_red(data,var_rat=0.9,scaled=False,verbose=True):
     if scaled:
         scaled_data = data
     else:
-        print("Scaling data using StandardScaler...")
+        if verbose: print("Scaling data using StandardScaler...")
         scaled_data = data_scaler(data,nfeats=len(data.columns))
 
-    print("Finding minimum number of dimensions to explain {:04.1f}% of the variance...".format(var_rat*100))
+    if verbose: print("Finding minimum number of dimensions to explain {:04.1f}% of the variance...".format(var_rat*100))
     
     for i in range(len(data.columns)):
         pca = PCA(n_components=i)
