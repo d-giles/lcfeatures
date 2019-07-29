@@ -378,17 +378,6 @@ def four_Q_lc(kid,Qa,Qb,Qc,Qd):
     
     fig.tight_layout()
 
-    
-catalogs = {'koi_full':['list_koi_full.txt',',',2],
-            'koi_confirmed':['list_koi_confirmed.txt',',',2],
-            'koi_candidate':['list_koi_candidate.txt',',',2],
-            'koi_fp':['list_koi_fp.txt',',',2],
-            'EB':['list_EBs.csv',',',0],
-            'HB':['list_kepler_heartbeats.txt',None,37],
-            'flares':['kepler_solar_flares.txt',None,22],
-            'no_signal':['list_kepler_nosig.txt',None,28],
-            'periodic':['list_kepler_MSperiods.txt',None,32]}
-
 def interactive_plot(df,pathtofits,clusterLabels):
     """
     Purpose:
@@ -613,6 +602,15 @@ def interactive_plot(df,pathtofits,clusterLabels):
 ###########################################################
 ### Class and methods for the weirdness profile/dossier ###
 ###########################################################
+catalogs = {'koi_full':['./Variable Lists/list_koi_full.txt',',',2],
+            'koi_confirmed':['./Variable Lists/list_koi_confirmed.txt',',',2],
+            'koi_candidate':['./Variable Lists/list_koi_candidate.txt',',',2],
+            'koi_fp':['./Variable Lists/list_koi_fp.txt',',',2],
+            'EB':['./Variable Lists/list_EBs.csv',',',0],
+            'HB':['./Variable Lists/list_kepler_heartbeats.txt',None,37],
+            'flares':['./Variable Lists/kepler_solar_flares.txt',None,22],
+            'no_signal':['./Variable Lists/list_kepler_nosig.txt',None,28],
+            'periodic':['./Variable Lists/list_kepler_MSperiods.txt',None,32]}
 
 class weirdnessProfile(object):
     def __init__(self,
@@ -704,7 +702,12 @@ class weirdnessProfile(object):
             ax.scatter(self.analysis_data[Q].pca_x,self.analysis_data[Q].pca_y)
             
     def catalogCheck(self):
-        # Checks the available catalogs to see if the object is contained in them
+        """
+        Checks the available catalogs to see if the object is contained in them
+        
+        These catalogs are hardcoded in and based on lists compiled from various sources
+        This isn't great practice, but these methods are created for a specific purpose,
+        """
         in_catalogs = []
         ctlg_sampler = {}
         # Catalogs of individual classes are looped through here
@@ -716,14 +719,14 @@ class weirdnessProfile(object):
                 ctlg_sampler[ctlg] = make_sampler(ctlg_list)
                 
         # Debosscher and SIMBAD have a bunch of different classifications, each need parsed out
-        lines = np.genfromtxt('kepler_variable_classes.txt',dtype=str,skip_header=50)
+        lines = np.genfromtxt('./Variable Lists/kepler_variable_classes.txt',dtype=str,skip_header=50)
         Debosscher_full_df = pd.DataFrame(data=lines[:,4],columns=["Class"],index=lines[:,0])
         if Debosscher_full_df.index.str.contains(self.KIC).any():
             deb_class = Debosscher_full_df.loc[self.KIC,'Class']
             ctlg_sampler['Deb_Class_%s'%deb_class]=make_sampler(Debosscher_full_df[Debosscher_full_df.Class==deb_class].index)
             in_catalogs.append('Deb_Class_%s'%deb_class)
             
-        lines = np.genfromtxt('simbad.csv',delimiter=';',skip_header=7,dtype=str)[:,1:]
+        lines = np.genfromtxt('./Variable Lists/simbad.csv',delimiter=';',skip_header=7,dtype=str)[:,1:]
         simbad_full_df = pd.DataFrame(data=lines[:,1],columns=["Class"],index=lines[:,0])
         if simbad_full_df.index.str.contains(self.KIC).any():
             sim_class = simbad_full_df.loc[simbad_full_df.index.str.contains(self.KIC),'Class'][0]
