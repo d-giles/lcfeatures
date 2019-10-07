@@ -85,3 +85,9 @@ Discovered that Q2 and Q3 unzipped improperly and dropped 15k and 60k lightcurve
 
 8/8/19
 Generating PCA reductions for Q2 and Q3, scoring Q2 and Q3
+
+8/30/19
+A lot of plots have been produced and reproduced, nothing is paper quality yet but it's getting there.
+Checked what a subset of features looked like, wasn't really anything meaningful, deleted it.
+Cleaned up Scoring_parameters.ipynb of a lot of previous work. There was a lot of old comparison work, but I think the scoring comparisons are better than the ranked comparisons (which were just for Qs 4/8/11/16).
+Setting up to work remotely from here on out, hope nothing goes wrong.
