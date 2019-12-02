@@ -12,13 +12,17 @@ import numpy as np
 np.set_printoptions(threshold=sys.maxsize)
 import pandas as pd
 import astropy.io.fits as fits
-import seaborn as sns
-from sklearn import preprocessing
-from sklearn.manifold import TSNE
-from sklearn.neighbors import NearestNeighbors
-from sklearn.cluster import DBSCAN, KMeans
-from sklearn.decomposition import PCA
+from astroquery.mast import Observations # how to remotely access Kepler data from Mast
+import shutil # to delete downloaded fits files once done
 
+import seaborn as sns
+import sklearn
+preprocessing = sklearn.preprocessing
+TSNE = sklearn.manifold.TSNE
+NearestNeighbors = sklearn.neighbors.NearestNeighbors
+DBSCAN = sklearn.cluster.DBSCAN
+KMeans = sklearn.cluster.KMeans
+PCA = sklearn.decomposition.PCA
 
 if sys.version_info[0] < 3:
     import Tkinter as Tk
@@ -377,7 +381,57 @@ def four_Q_lc(kid,Qa,Qb,Qc,Qd):
     ax1.legend(loc='upper center',bbox_to_anchor=(0.5,1.05),ncol=3, fontsize=18)
     
     fig.tight_layout()
+    
+def plot_top_n(Q_coo,n=10,sortby='sAverage',top_n_df=False):
+    """
+    Purpose:
+        Plots the top n outlier lightcurves for a given quarter. This assumes data is saved in the standard
+        way for coo files, i.e. that feature data is saved as the attribute 'data' in a dataframe, that outlier scores are
+        saved as 'scores', and that the indices of each are the full file names.
+    Args:
+        Q_coo (cluster outlier object) - The cluster outlier object containing the feature data and outlier scores attributes
+        n (int) - number of plots to create of most outlying points
+        sortby (optional, str) - how to sort scores, default is the sampled average of k=4 to 13
+        top_n_df (optional, boolean) - whether or not to return a dataframe containing the features of the top outliers
+    Returns:
+        top_n_feats (optional, dataframe) - pandas dataframe containing the features of the top n outliers
+    """
 
+    tmp = Q_coo.scores.sort_values(by=sortby,ascending=False)
+    filenames = list(tmp.index[:n])
+    obj_ids = [i[:13] for i in tmp.index[:n]]
+    keplerObs = Observations.query_criteria(target_name=obj_ids, obs_collection='Kepler')
+    keplerProds = Observations.get_product_list(keplerObs)
+    yourProd = Observations.filter_products(keplerProds, extension=filenames)
+    manifest = Observations.download_products(yourProd)
+    
+    """
+    The process of downloading the files sorts them in numerical order messing up the 
+    order of most outlying to leas, so I'm making the manifest a dataframe and sampling it
+    one at a time from the filenames, not sure if there's a way to just sort the whole list
+    based on the original order.
+    """
+    manifest = manifest.to_pandas(index='Local Path')
+    
+    for i,f in enumerate(filenames): # forcing the order to match most to least outlying
+        f_sampler = make_sampler([f]) # to find the right file from manifest
+        filename = f_sampler(manifest).index[0] # full local filepath
+
+        fig = plt.figure(figsize=(15,1))
+        ax = fig.add_subplot(111)
+        t,nf,err = read_kepler_curve(filename)
+        ax.errorbar(t,nf,err)
+        plt.title('KIC {}'.format(int(obj_ids[i][4:])))
+        
+    shutil.rmtree('./mastDownload') # removing the downloaded data
+    
+    if top_n_df:
+        top_n_sampler = make_sampler(tmp[:n].index)
+        top_n_feats = top_n_sampler(Q_coo.data)
+        return top_n_feats
+    else:
+        return
+    
 def interactive_plot(df,pathtofits,clusterLabels):
     """
     Purpose:
@@ -487,8 +541,21 @@ def interactive_plot(df,pathtofits,clusterLabels):
     def drawData(index):
         # Plots the lightcurve of the point chosen
         ax2.cla()
-        f = pathtofits+df.index[index]
-        t,nf,err=read_kepler_curve(f)
+        ### for fits files saved locally
+        #f = pathtofits+df.index[index]
+        #t,nf,err=read_kepler_curve(f)
+                
+        ### for fits files that need downloaded
+        f = df.index[index] # full file name ****-****_llc.fits
+        obj_id = f[:13] # observation id kplr********
+        keplerObs = Observations.query_criteria(target_name=obj_id, obs_collection='Kepler')
+        keplerProds = Observations.get_product_list(keplerObs)
+        yourProd = Observations.filter_products(keplerProds, extension=f)
+        manifest = Observations.download_products(yourProd)
+        filename = manifest[0][0]            
+        t,nf,err = qt.read_kepler_curve(filename)
+        shutil.rmtree('./mastDownload') # removing the downloaded data
+        
         x=t
         y=nf
         axrange=0.55*(max(y)-min(y))
