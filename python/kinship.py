@@ -29,7 +29,10 @@ def dist_scores(data,d2s=None,kmin=4,kmax=None):
     distances, indices = nbrs.kneighbors(d2s)
     
     # empty numpy array which will contain scores, one additional column for average score
-    scores = np.zeros((kmax-kmin+1,len(distances))) 
+    if kmax==kmin:
+        scores=np.zeros((1,len(distances)))
+    else: 
+        scores = np.zeros((kmax-kmin+2,len(distances))) 
     
     # There's probably a better way to do this with numpy arrays, but it's not worth figuring out
     for k in range(kmin,kmax+1):    
