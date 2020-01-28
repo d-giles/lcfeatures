@@ -17,12 +17,12 @@ import shutil # to delete downloaded fits files once done
 
 import seaborn as sns
 import sklearn
-preprocessing = sklearn.preprocessing
-TSNE = sklearn.manifold.TSNE
-NearestNeighbors = sklearn.neighbors.NearestNeighbors
-DBSCAN = sklearn.cluster.DBSCAN
-KMeans = sklearn.cluster.KMeans
-PCA = sklearn.decomposition.PCA
+from sklearn import preprocessing
+from sklearn.manifold import TSNE
+from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import DBSCAN
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 
 if sys.version_info[0] < 3:
     import Tkinter as Tk
