@@ -306,7 +306,7 @@ def four_panel(data, title='Data',
     
     return
 
-def plot_lc(file,filepath,c='blue',ax=False):
+def plot_lc(file,filepath='./fitsFiles/',local=True,c='blue',ax=False):
     """
     kid should be full id including time information
     Args:
@@ -315,10 +315,21 @@ def plot_lc(file,filepath,c='blue',ax=False):
     Returns:
         None
     """
+    if local:
+        f=filepath+file
+    else:
+        filenames = [file]
+        obj_ids = [i[:13] for i in tmp.index[:n]]
+        keplerObs = Observations.query_criteria(target_name=obj_ids, obs_collection='Kepler')
+        keplerProds = Observations.get_product_list(keplerObs)
+        yourProd = Observations.filter_products(keplerProds, extension=file)
+        manifest = Observations.download_products(yourProd)
+        manifest = manifest.to_pandas(index='Local Path')
+        f=manifest.index[0]
+
     if not ax:
         fig = plt.figure(figsize=(16,4))
         ax = fig.add_subplot(111)
-    f = filepath+file
     
     t,nf,err=read_kepler_curve(f)
 
