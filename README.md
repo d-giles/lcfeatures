@@ -1,11 +1,8 @@
-KeplerML
+Lightcurve Feature Extractor
 ========
-How to use this repository:
+Recommended prerequisite: Filelist with lightcurve filenames.
 
-Recommended Prerequisite:
-Filelist with lightcurve filenames.
-
-Recommendation:
+Recommendation (example given for long cadence lightcurves from a Kepler quarter):
 1. Collect lightcurves into a single directory.
 2. Generate a filelist of the contents of that directory (the lightcurves)
 
